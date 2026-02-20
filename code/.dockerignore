@@ -1,0 +1,8 @@
+node_modules
+venv
+.git
+frontend/dist
+backend/logs
+__pycache__
+*.sqlite
+.ipynb

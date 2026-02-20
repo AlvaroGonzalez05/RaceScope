@@ -1,0 +1,35 @@
+# OS / local
+.DS_Store
+*.log
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+coverage/
+
+# Project generated artifacts
+code/backend_fastapi/.venv*/
+code/backend_fastapi/cache/**
+!code/backend_fastapi/cache/.gitkeep
+code/backend_fastapi/data/raw/**
+!code/backend_fastapi/data/raw/.gitkeep
+code/backend_fastapi/data/features/**
+!code/backend_fastapi/data/features/.gitkeep
+code/backend_fastapi/models/**
+!code/backend_fastapi/models/.gitkeep
+
+# Legacy backend cache (safety)
+code/backend/f1_cache/

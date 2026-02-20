@@ -1,0 +1,14 @@
+# Ignorar bases de datos SQLite
+*.sqlite
+*.sqlite3
+*.db
+*.db3
+*.sqlite-journal
+*.sqlite3-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+node_modules
+venv
+dist
