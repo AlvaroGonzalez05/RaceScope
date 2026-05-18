@@ -1,8 +1,14 @@
 # OS / local
 .DS_Store
+.Rhistory
 *.log
 .env
 .env.*
+!.env.example
+!code/backend_fastapi/.env.example
+
+# Claude Code session state
+.claude/
 
 # Python
 __pycache__/
@@ -24,12 +30,29 @@ coverage/
 code/backend_fastapi/.venv*/
 code/backend_fastapi/cache/**
 !code/backend_fastapi/cache/.gitkeep
+
+# Medallion data layers — not versioned, regenerated locally
 code/backend_fastapi/data/raw/**
 !code/backend_fastapi/data/raw/.gitkeep
+code/backend_fastapi/data/bronze/**
+!code/backend_fastapi/data/bronze/.gitkeep
+code/backend_fastapi/data/silver/**
+!code/backend_fastapi/data/silver/.gitkeep
+code/backend_fastapi/data/gold/**
+!code/backend_fastapi/data/gold/.gitkeep
+# Legacy alias (data/features/ → data/gold/)
 code/backend_fastapi/data/features/**
-!code/backend_fastapi/data/features/.gitkeep
+
+# Trained models and training artefacts
 code/backend_fastapi/models/**
 !code/backend_fastapi/models/.gitkeep
+
+# Training visualisations and HPO results
+code/backend_fastapi/plots/
+code/backend_fastapi/hparam_results/
+
+# Benchmark reports
+code/backend_fastapi/benchmark_*.json
 
 # Legacy backend cache (safety)
 code/backend/f1_cache/

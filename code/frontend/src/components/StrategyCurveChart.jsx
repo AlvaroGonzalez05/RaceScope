@@ -1,11 +1,7 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { formatLapTime, formatRaceDuration } from "../utils/time.js";
-
-const COMPOUND_COLORS = {
-  SOFT: "#ff4b4b",
-  MEDIUM: "#f2c94c",
-  HARD: "#b8bec6",
-};
+import { formatLapTime, formatRaceDuration, formatDelta } from "../utils/time.js";
+import { COMPOUND_COLORS } from "../constants/compounds.js";
+import { useLang } from "../i18n/LangContext.jsx";
 
 const PIT_WINDOW_COLOR = "rgba(255, 107, 46, 0.18)";
 const PADDING = { top: 14, right: 14, bottom: 22, left: 42 };
@@ -119,11 +115,12 @@ function computeDomain(values, fallback = FALLBACK_DOMAIN) {
   return { min: min - margin, max: max + margin };
 }
 
-function StrategyCurveChart({ strategy, totalLaps, selected, onSelect, yDomain }) {
+function StrategyCurveChart({ strategy, totalLaps, selected, onSelect, yDomain, bestTime = 0, featured = false }) {
   const wrapperRef = useRef(null);
   const clipId = useId().replace(/:/g, "_");
   const { width, height } = useResizeObserver(wrapperRef);
   const [hover, setHover] = useState(null);
+  const { t } = useLang();
 
   const layoutValid = width >= MIN_VALID_SIZE && height >= MIN_VALID_SIZE;
 
@@ -233,12 +230,14 @@ function StrategyCurveChart({ strategy, totalLaps, selected, onSelect, yDomain }
   }, [chart, layoutValid, width]);
 
   if (!dataModel.points.length) {
-    return <div className="strategy-curve-empty">Sin datos de degradación.</div>;
+    return <div className="strategy-curve-empty">{t("chart.noData")}</div>;
   }
+
+  const cardClass = `strategy-curve-card${selected ? " is-selected" : ""}${featured ? " featured" : ""}`;
 
   if (!layoutValid) {
     return (
-      <article className={`strategy-curve-card ${selected ? "is-selected" : ""}`}>
+      <article className={cardClass}>
         <div ref={wrapperRef} className="curve-wrapper">
           <div className="chart-skeleton" />
         </div>
@@ -248,14 +247,14 @@ function StrategyCurveChart({ strategy, totalLaps, selected, onSelect, yDomain }
 
   return (
     <article
-      className={`strategy-curve-card ${selected ? "is-selected" : ""}`}
-      onClick={(e) => {
+      className={cardClass}
+      onClick={featured ? undefined : (e) => {
         e.stopPropagation();
         onSelect?.();
       }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
+      role={featured ? undefined : "button"}
+      tabIndex={featured ? undefined : 0}
+      onKeyDown={featured ? undefined : (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           e.stopPropagation();
@@ -268,23 +267,34 @@ function StrategyCurveChart({ strategy, totalLaps, selected, onSelect, yDomain }
           <p className="strategy-kind">{strategy.type}</p>
           <p className="strategy-time">{formatRaceDuration(strategy.expected_time)}</p>
         </div>
-        <p className="strategy-risk">var {Number(strategy.variance || 0).toFixed(1)}</p>
+        {(() => {
+          const delta = strategy.expected_time - bestTime;
+          const isBest = !Number.isFinite(delta) || delta <= 0;
+          return (
+            <span
+              className={`strategy-delta-badge ${isBest ? "is-best" : ""}`}
+              title={`Variance: ${Number(strategy.variance || 0).toFixed(1)}`}
+            >
+              {isBest ? t("vis.best") : formatDelta(delta)}
+            </span>
+          );
+        })()}
       </header>
 
       <div className="compound-legend">
         {Object.entries(COMPOUND_COLORS).map(([compound, color]) => (
           <span key={compound} className="legend-item">
             <i style={{ background: color }} />
-            {compound}
+            {compound.charAt(0) + compound.slice(1).toLowerCase()}
           </span>
         ))}
-        <span className="legend-item">
+        <span className="legend-item legend-item--pit">
           <i className="pit-window-swatch" style={{ background: PIT_WINDOW_COLOR }} />
-          Ventana de parada
+          {t("chart.pit")}
         </span>
       </div>
 
-      <div ref={wrapperRef} className="curve-wrapper" onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
+      <div ref={wrapperRef} className="curve-wrapper" onPointerMove={handleMove} onPointerLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%" className="curve-svg">
           <defs>
             <clipPath id={clipId}>
@@ -338,24 +348,28 @@ function StrategyCurveChart({ strategy, totalLaps, selected, onSelect, yDomain }
 
           {hover && <circle cx={hover.x} cy={hover.y} r="4" className="hover-dot" />}
 
-          <text x={PADDING.left + 4} y={PADDING.top - 2} className="axis-caption">Lap time (s)</text>
-          <text x={width - PADDING.right - 4} y={height - 6} className="axis-caption" textAnchor="end">Lap</text>
+          <text x={PADDING.left + 4} y={PADDING.top - 2} className="axis-caption">{t("chart.laptime")}</text>
+          <text x={width - PADDING.right - 4} y={height - 6} className="axis-caption" textAnchor="end">{t("chart.lap")}</text>
         </svg>
 
-        {hover && (
-          <div
-            className="curve-tooltip"
-            style={{ left: `${((hover.x / width) * 100).toFixed(2)}%`, top: `${((hover.y / height) * 100).toFixed(2)}%` }}
-          >
-            <span>V{hover.lap}</span>
-            <span>{hover.compound}</span>
-            <span>{formatLapTime(hover.lapTime)}</span>
-            {Number.isFinite(hover.tyreLife) && <span>Tyre {hover.tyreLife.toFixed(1)}%</span>}
-            {hover.activeWindow
-              ? <span>Ventana de parada: {hover.activeWindow.lapMin}-{hover.activeWindow.lapMax}</span>
-              : <span>Fuera de ventana</span>}
-          </div>
-        )}
+        {hover && (() => {
+          const _leftPct = (hover.x / width) * 100;
+          const _left = Math.min(Math.max(_leftPct, 8), 88).toFixed(2);
+          return (
+            <div
+              className="curve-tooltip"
+              style={{ left: `${_left}%`, top: `${((hover.y / height) * 100).toFixed(2)}%` }}
+            >
+              <span>{t("chart.lap_abbrev")}{hover.lap}</span>
+              <span>{hover.compound}</span>
+              <span>{formatLapTime(hover.lapTime)}</span>
+              {Number.isFinite(hover.tyreLife) && <span>{t("chart.tyre")} {hover.tyreLife.toFixed(1)}%</span>}
+              {hover.activeWindow
+                ? <span>{t("chart.pitWindow")}: {hover.activeWindow.lapMin}-{hover.activeWindow.lapMax}</span>
+                : <span>{t("chart.outsideWindow")}</span>}
+            </div>
+          );
+        })()}
       </div>
     </article>
   );

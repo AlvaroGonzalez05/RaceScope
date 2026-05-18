@@ -118,7 +118,9 @@ class LSTMPaceModel:
         return ModelBundle(self.model.state_dict(), self.encoders, self.stats)
 
     def load(self, bundle: ModelBundle, input_dim: int) -> None:
-        self.model = LSTMPaceNet(input_dim)
+        # Infer hidden_dim from saved weights to support non-default sizes
+        hidden_dim = bundle.model_state["lstm.weight_hh_l0"].shape[1]
+        self.model = LSTMPaceNet(input_dim, hidden_dim=hidden_dim)
         self.model.load_state_dict(bundle.model_state)
         self.encoders = bundle.encoders
         self.stats = bundle.stats

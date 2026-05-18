@@ -141,7 +141,8 @@ Se mantienen temporalmente:
   "driver_id": 14,
   "risk_bias": 0.15,
   "n_strategies": 5,
-  "debug_profile": false
+  "debug_profile": false,
+  "force_recompute": true
 }
 ```
 
@@ -151,6 +152,7 @@ Se mantienen temporalmente:
   "year": 2023,
   "circuit_id": "Sakhir",
   "driver_id": 14,
+  "compute_meta": {"cache_hit": false, "mc_executed": true, "elapsed_ms": 512.4},
   "context": {"total_laps": 57, "track_temp": 29.6, "air_temp": 25.9, "pit_loss": 22.5, "sc_probability": 0.2},
   "strategies": [...],
   "degradation": {...}
@@ -216,21 +218,23 @@ La UI nunca deja selects vacios sin mensaje contextual.
 Nota de repositorio limpio:
 - Este repo no versiona datasets, caches ni modelos entrenados.
 - Tras clonar, hay que ejecutar ingesta/preprocesado/entrenamiento para regenerar artefactos locales.
+- OpenF1 puede requerir autenticacion. Configura `code/backend_fastapi/.env` desde `code/backend_fastapi/.env.example`.
 
 ## 8.1 Backend
 ```bash
 cd "code/backend_fastapi"
-python3.11 -m venv .venv311
-source .venv311/bin/activate
+python3.11 -m venv .venv_demo
+source .venv_demo/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 ```
 
 ### 8.1.1 Pipeline
 ```bash
-python -m scripts.ingest_season --year 2023
+python -m scripts.ingest_season --year 2023 --sleep-s 1.5 --min-interval 1.2
 python -m scripts.preprocess --year 2023
-python -m scripts.train_models --min-laps 200 --epochs 8
-python -m scripts.train_profiles --min-laps 120
+python -m scripts.train_models --min-laps 260 --epochs 12
+python -m scripts.train_profiles --min-laps 160
 ```
 
 ### 8.1.2 API
@@ -254,6 +258,46 @@ npm run dev -- --host 0.0.0.0 --port 5173
 
 ---
 
+## 8.3 Demo MVP (presentacion)
+Modo recomendado para demo: **snapshot local** (sin dependencia de red/OpenF1 durante la presentacion).
+
+### Checklist preflight (2-3 min)
+```bash
+# 1) cortar procesos viejos
+pkill -f "uvicorn app.main:app" || true
+pkill -f "vite" || true
+
+# 2) validar puertos libres
+lsof -i :8000 -n -P
+lsof -i :5173 -n -P
+
+# 3) validar artefactos minimos
+ls code/backend_fastapi/data/features/year=2023/features.parquet
+ls code/backend_fastapi/models/global.joblib
+ls code/backend_fastapi/models/driver_14.joblib
+```
+
+### Arranque de demo (single-origin)
+```bash
+cd "code/frontend"
+npm run build
+
+cd "../backend_fastapi"
+source .venv_demo/bin/activate
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Abrir: `http://127.0.0.1:8000`
+
+### Guion rapido
+1. `Home`: mostrar landing interactiva.
+2. `Pre-race`: seleccionar temporada/circuito/pilotos.
+3. Pulsar `Calcular`.
+4. Mostrar top estrategias con curvas, stints y pit windows.
+5. Caso estable de contingencia: `2023 / Sakhir / 14`.
+
+---
+
 ## 9) Troubleshooting
 
 ### 9.1 Pantalla sin datos
@@ -261,6 +305,18 @@ Comprobar:
 1. `GET /api/metadata/seasons` devuelve datos.
 2. Existe `data/features/year=.../features.parquet`.
 3. No hay backend viejo en otro puerto/origen.
+4. Para demo estable, usar snapshot local con `OPENF1_AUTH_ENABLED=false` en `.env`.
+5. Si OpenF1 devuelve 401 en ingesta, revisar `OPENF1_USERNAME` y `OPENF1_PASSWORD`.
+
+### 9.1.b Import freeze de stack cientifico
+Si `uvicorn` no arranca o se queda colgado en imports:
+1. Crear entorno nuevo (`.venv_demo`) y reinstalar dependencias.
+2. Verificar import rapido:
+```bash
+cd "code/backend_fastapi"
+.venv_demo/bin/python -c "import pandas, numpy, scipy, torch; print('ok')"
+```
+3. Relanzar API con ese entorno.
 
 ### 9.5 Checklist visual rapido (UI actual)
 1. La app abre en `Home`.
@@ -280,13 +336,14 @@ Preferir single-origin (`frontend/dist` servido por FastAPI). Evita discrepancia
 ### 9.4 Falta de modelos/perfiles
 Reejecutar:
 ```bash
-python -m scripts.train_models --min-laps 200 --epochs 8
-python -m scripts.train_profiles --min-laps 120
+python -m scripts.train_models --min-laps 260 --epochs 12
+python -m scripts.train_profiles --min-laps 160
 ```
 
 ### 9.5 Cache inconsistente
 Borrar cache local:
 - `code/backend_fastapi/cache/pace_curves/*`
+- Si hay snapshot local y fallo online, `compute_meta.stale_data=true` indicara que la API sirve ultimo estado persistido.
 
 ---
 
@@ -302,7 +359,7 @@ Interpretacion:
 Para benchmark local:
 ```bash
 cd "code/backend_fastapi"
-.venv311/bin/python scripts/benchmark_strategy.py
+.venv_demo/bin/python scripts/benchmark_strategy.py
 ```
 
 ---

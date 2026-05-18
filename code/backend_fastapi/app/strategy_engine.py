@@ -14,16 +14,24 @@ import numpy as np
 import pandas as pd
 
 from .config import (
+    CIRCUIT_VOCAB,
+    DEFAULT_CONTEXT_LAPS,
     DEFAULT_RISK_LAMBDA,
     DEFAULT_STRATEGY_COUNT,
     MODELS_DIR,
-    PIT_WINDOW_BIN,
-    RANDOM_SEED,
     MC_TOP_K,
     PACE_CURVE_CACHE_DIR,
+    PIT_LOSS_FALLBACK, PIT_LOSS_MIN, PIT_LOSS_MAX,
+    PIT_WINDOW_BIN,
+    RANDOM_SEED,
+    SC_PROBABILITY_FALLBACK, SC_PROBABILITY_MIN, SC_PROBABILITY_MAX,
+    TRANSFORMER_V2_N_SIM,
 )
-from .models_lstm import LSTMPaceModel, ModelBundle
 from .driver_profile import load_driver_profile, resolve_profile_params
+
+# torch-dependent model imports are done lazily inside _load_model_cached and
+# _simulate_strategy so that importing this module never triggers torch
+# initialisation (which can block on macOS MPS at collection time in tests).
 
 
 @dataclass
@@ -56,7 +64,7 @@ class StrategyEngine:
         df = self.features
         df = df[(df["year"] == year) & (df["circuit_id"] == circuit_id)]
         if df.empty:
-            return RaceContext(year=year, total_laps=55, track_temp=30.0, air_temp=22.0, pit_loss=22.5, sc_probability=0.2)
+            return RaceContext(year=year, total_laps=55, track_temp=30.0, air_temp=22.0, pit_loss=PIT_LOSS_FALLBACK, sc_probability=SC_PROBABILITY_FALLBACK)
 
         race = df[df["session_type"] == "RACE"]
         total_laps = int(race["lap_number"].max()) if not race.empty else int(df["lap_number"].max())
@@ -68,9 +76,72 @@ class StrategyEngine:
             total_laps=total_laps,
             track_temp=track_temp,
             air_temp=air_temp,
-            pit_loss=22.5,
-            sc_probability=0.2,
+            pit_loss=self._derive_pit_loss(year, circuit_id),
+            sc_probability=self._derive_sc_probability(year, circuit_id),
         )
+
+    def _derive_pit_loss(self, year: int, circuit_id: str) -> float:
+        """Estimate pit-stop time loss from historical stint transitions."""
+        df = self.features
+        race = df[(df["year"] == year) & (df["circuit_id"] == circuit_id) & (df["session_type"] == "RACE")]
+        if race.empty:
+            return PIT_LOSS_FALLBACK
+        pit_deltas = []
+        for driver_id, driver_df in race.groupby("driver_id"):
+            driver_df = driver_df.sort_values("lap_number")
+            stints = driver_df["stint_number"].dropna().unique()
+            if len(stints) < 2:
+                continue
+            median_pace = driver_df["lap_time"].median()
+            for stint_num in sorted(stints)[1:]:
+                prev_stint = driver_df[driver_df["stint_number"] == stint_num - 1]
+                curr_stint = driver_df[driver_df["stint_number"] == stint_num]
+                if prev_stint.empty or curr_stint.empty:
+                    continue
+                # First lap of a new stint is the in-lap or slow outlap — skip outlap, use 2nd lap
+                if len(curr_stint) >= 2:
+                    outlap_time = curr_stint.iloc[0]["lap_time"]
+                    delta = outlap_time - median_pace
+                    if 5.0 <= delta <= 60.0:  # sanity bounds
+                        pit_deltas.append(delta)
+        if len(pit_deltas) < 5:
+            return PIT_LOSS_FALLBACK
+        result = float(np.median(pit_deltas))
+        return float(np.clip(result, PIT_LOSS_MIN, PIT_LOSS_MAX))
+
+    def _derive_sc_probability(self, year: int, circuit_id: str) -> float:
+        """Estimate safety-car probability from historical lap-time anomalies."""
+        df = self.features
+        race = df[(df["year"] == year) & (df["circuit_id"] == circuit_id) & (df["session_type"] == "RACE")]
+        if race.empty:
+            return SC_PROBABILITY_FALLBACK
+        sessions = race["session_key"].unique()
+        if len(sessions) < 2:
+            return SC_PROBABILITY_FALLBACK
+        sc_sessions = 0
+        for session_key in sessions:
+            sess_df = race[race["session_key"] == session_key]
+            if sess_df.empty:
+                continue
+            median_lap = sess_df["lap_time"].median()
+            if not (median_lap > 0):
+                continue
+            threshold = median_lap * 1.35
+            # Check for ≥3 consecutive laps where most drivers exceed threshold
+            laps_grouped = sess_df.groupby("lap_number")["lap_time"].median()
+            slow_laps = (laps_grouped > threshold).astype(int)
+            # Detect runs of 3+ slow laps
+            run = 0
+            for v in slow_laps.values:
+                if v:
+                    run += 1
+                    if run >= 3:
+                        sc_sessions += 1
+                        break
+                else:
+                    run = 0
+        probability = sc_sessions / len(sessions)
+        return float(np.clip(probability, SC_PROBABILITY_MIN, SC_PROBABILITY_MAX))
 
     def _compound_stats(self, driver_id: int, year: int, circuit_id: str) -> Dict[str, Dict[str, float]]:
         df = self.features
@@ -94,14 +165,21 @@ class StrategyEngine:
             stats[compound_key] = {"base": float(base), "slope": float(slope)}
         return stats
 
+    # Race-context upper-bound floors: practice/qualifying stints are short by design,
+    # but in a full race a driver can extend a soft to 25+ laps and a medium to 35+.
+    # Without these floors, SOFT-start strategies are never generated for long races
+    # because the observed upper bound (e.g. 18 laps) is smaller than the required
+    # stint length (e.g. total_laps − MEDIUM_lower ≈ 39).
+    _RACE_MAX_FLOOR: Dict[str, int] = {"SOFT": 25, "MEDIUM": 35, "HARD": 45}
+
     def _tyre_life_bounds(self, year: int, circuit_id: str) -> Dict[str, Tuple[int, int]]:
         df = self.features
         df = df[(df["year"] == year) & (df["circuit_id"] == circuit_id)]
         if df.empty:
-            return {"SOFT": (12, 18), "MEDIUM": (18, 26), "HARD": (24, 34)}
+            return {"SOFT": (10, 25), "MEDIUM": (16, 35), "HARD": (22, 45)}
 
         stint_lengths = (
-            df.groupby(["driver_id", "session_key", "stint_number", "compound"])  
+            df.groupby(["driver_id", "session_key", "stint_number", "compound"])
             ["stint_age"].max().reset_index()
         )
         bounds = {}
@@ -113,15 +191,18 @@ class StrategyEngine:
                 continue
             q1 = int(np.quantile(sdf["stint_age"], 0.2))
             q9 = int(np.quantile(sdf["stint_age"], 0.8))
-            bounds[compound_key] = (max(q1, 8), max(q9, q1 + 4))
-        if not bounds:
-            bounds = {"SOFT": (12, 18), "MEDIUM": (18, 26), "HARD": (24, 34)}
+            hi = max(q9, q1 + 4, self._RACE_MAX_FLOOR.get(compound_key, q9))
+            bounds[compound_key] = (max(q1, 8), hi)
+        # Fill any compounds missing from data with race-context defaults
+        for compound, (default_lo, default_hi) in [("SOFT", (10, 25)), ("MEDIUM", (16, 35)), ("HARD", (22, 45))]:
+            if compound not in bounds:
+                bounds[compound] = (default_lo, default_hi)
         return bounds
 
-    def _load_model(self, driver_id: int) -> Tuple[LSTMPaceModel, int]:
+    def _load_model(self, driver_id: int):
         return _load_model_cached(driver_id)
 
-    def _predict_stint(self, model: LSTMPaceModel, driver_id: int, compound: str, stint_len: int, context: RaceContext, base: float, slope: float, circuit_id: str) -> np.ndarray:
+    def _predict_stint(self, model, driver_id: int, compound: str, stint_len: int, context: RaceContext, base: float, slope: float, circuit_id: str) -> np.ndarray:
         return _predict_stint_cached(
             driver_id,
             compound,
@@ -284,7 +365,7 @@ class StrategyEngine:
 
     def _simulate_strategy(
         self,
-        model: LSTMPaceModel,
+        model,
         driver_id: int,
         candidate: StrategyCandidate,
         context: RaceContext,
@@ -294,32 +375,180 @@ class StrategyEngine:
     ) -> Tuple[float, float, List[float]]:
         n_sim = max(n_sim, 1)
         sc_events = np.random.rand(n_sim) < context.sc_probability
-        sc_laps = np.random.randint(5, max(6, context.total_laps - 5), size=n_sim)
+        sc_laps   = np.random.randint(5, max(6, context.total_laps - 5), size=n_sim)
 
         pit_loss = np.full(n_sim, context.pit_loss, dtype=float)
         if candidate.stop_laps:
-            stops = np.array(candidate.stop_laps, dtype=int)
+            stops     = np.array(candidate.stop_laps, dtype=int)
             near_stop = (np.abs(sc_laps[:, None] - stops[None, :]) <= 2).any(axis=1)
-            pit_loss = np.where(sc_events & near_stop, np.maximum(12.0, pit_loss - 8.0), pit_loss)
+            pit_loss  = np.where(sc_events & near_stop, np.maximum(12.0, pit_loss - 8.0), pit_loss)
 
-        totals = np.zeros(n_sim, dtype=float)
-        traffic_mu = 0.15
+        totals        = np.zeros(n_sim, dtype=float)
+        traffic_mu    = 0.15
         traffic_sigma = 0.05
 
-        curves = self._precompute_pace_curves(context.year, circuit_id, driver_id, context)
-        for stint_len, compound in zip(candidate.stint_lengths, candidate.compounds):
-            series = curves.get(compound.upper())
-            if series is None or len(series) < stint_len:
-                base = stats.get(compound.upper(), {}).get("base", 90.0)
-                slope = stats.get(compound.upper(), {}).get("slope", 0.05)
-                series = self._predict_stint(model, driver_id, compound.upper(), stint_len, context, base, slope, circuit_id)
-            base_sum = float(np.sum(series[:stint_len]))
-            noise = np.random.normal(
-                traffic_mu * stint_len,
-                traffic_sigma * math.sqrt(stint_len),
-                size=n_sim,
-            )
-            totals += base_sum + noise
+        # Lazy imports keep startup torch-free
+        from .models_transformer import (  # noqa: PLC0415
+            TransformerPaceModel,
+            TyreDegradationTransformerV2,
+            PracticeDistribution,
+            build_context_seed,
+            _build_context_seed_v1,
+            COMPOUND_VOCAB,
+            SESSION_TYPE_VOCAB,
+        )
+
+        circuit_int = CIRCUIT_VOCAB.get(circuit_id, 0)
+
+        if isinstance(model, TransformerPaceModel) and model.practice_dist:
+
+            if isinstance(model.model, TyreDegradationTransformerV2):
+                # -------------------------------------------------------
+                # v2 path — pace-bounds MC with race_lap_cursor tracking
+                # -------------------------------------------------------
+                n_sim = max(n_sim, TRANSFORMER_V2_N_SIM)
+                totals = np.zeros(n_sim, dtype=float)
+                sc_events = np.random.rand(n_sim) < context.sc_probability
+                sc_laps   = np.random.randint(5, max(6, context.total_laps - 5), size=n_sim)
+                pit_loss  = np.full(n_sim, context.pit_loss, dtype=float)
+                if candidate.stop_laps:
+                    near_stop = (np.abs(sc_laps[:, None] - stops[None, :]) <= 2).any(axis=1)
+                    pit_loss  = np.where(sc_events & near_stop, np.maximum(12.0, pit_loss - 8.0), pit_loss)
+
+                lap_mean  = float(model.stats.get("lap_mean",       90.0))
+                lap_std   = float(model.stats.get("lap_std",         1.0))
+                delta_std = float(model.stats.get("delta_std",       1.0))
+                track_ref = float(model.stats.get("track_temp_ref", 30.0))
+                air_ref   = float(model.stats.get("air_temp_ref",   25.0))
+
+                for sim_i in range(n_sim):
+                    rng_i          = np.random.default_rng(RANDOM_SEED + sim_i)
+                    sim_total      = 0.0
+                    race_lap_cursor = 0
+
+                    for stint_len, compound in zip(candidate.stint_lengths, candidate.compounds):
+                        compound_key = compound.upper()
+                        pd_dist = (
+                            model.practice_dist.get(compound_key)
+                            or model.practice_dist.get("global")
+                            or PracticeDistribution(compound=compound_key)
+                        )
+
+                        # Normalise pace bounds to model units
+                        pace_hi_norm = (pd_dist.pace_hi - lap_mean) / (lap_std or 1.0)
+                        pace_lo_norm = (pd_dist.pace_lo - lap_mean) / (lap_std or 1.0)
+
+                        t_track      = float(rng_i.normal(pd_dist.track_temp_mu, pd_dist.track_temp_sigma))
+                        t_air        = float(rng_i.normal(pd_dist.air_temp_mu,   pd_dist.air_temp_sigma))
+                        compound_int_c = COMPOUND_VOCAB.get(compound_key, 0)
+                        session_int    = SESSION_TYPE_VOCAB.get("RACE", 4)
+
+                        ctx_seed = build_context_seed(
+                            pd_dist,
+                            model.context_len,
+                            delta_std,
+                            track_ref,
+                            air_ref,
+                            compound_int_c,
+                            session_int,
+                            circuit_int=circuit_int,
+                            rng=rng_i,
+                        )
+
+                        lap_times = model.rollout_mc(
+                            ctx_seed,
+                            stint_len,
+                            (pace_hi_norm, pace_lo_norm),
+                            t_track,
+                            t_air,
+                            compound_int_c,
+                            base_lap_time=lap_mean,
+                            rng=rng_i,
+                            circuit_int=circuit_int,
+                            race_lap_start=race_lap_cursor,
+                        )
+                        race_lap_cursor += stint_len
+
+                        traffic_noise = float(rng_i.normal(
+                            traffic_mu * stint_len,
+                            traffic_sigma * math.sqrt(max(1, stint_len)),
+                        ))
+                        sim_total += float(np.sum(lap_times)) + traffic_noise
+
+                    totals[sim_i] = sim_total
+
+            else:
+                # -------------------------------------------------------
+                # v1 transformer path — original autoregressive MC
+                # -------------------------------------------------------
+                base_lap_time = float(model.stats.get("lap_mean", 90.0))
+                delta_std     = model.stats.get("delta_std",       1.0)
+                track_ref     = model.stats.get("track_temp_ref", 30.0)
+                air_ref       = model.stats.get("air_temp_ref",   25.0)
+
+                for sim_i in range(n_sim):
+                    rng_i     = np.random.default_rng(RANDOM_SEED + sim_i)
+                    sim_total = 0.0
+
+                    for stint_len, compound in zip(candidate.stint_lengths, candidate.compounds):
+                        compound_key     = compound.upper()
+                        pd_dist          = (
+                            model.practice_dist.get(compound_key)
+                            or model.practice_dist.get("global")
+                            or PracticeDistribution(compound=compound_key)
+                        )
+                        pace_intent      = float(rng_i.normal(pd_dist.pace_intent_mu, pd_dist.pace_intent_sigma))
+                        t_track          = float(rng_i.normal(pd_dist.track_temp_mu,   pd_dist.track_temp_sigma))
+                        t_air            = float(rng_i.normal(pd_dist.air_temp_mu,     pd_dist.air_temp_sigma))
+                        compound_int_c   = COMPOUND_VOCAB.get(compound_key, 0)
+                        session_type_int = SESSION_TYPE_VOCAB.get("RACE", 4)
+
+                        ctx_seed = _build_context_seed_v1(
+                            pd_dist,
+                            model.context_len,
+                            delta_std,
+                            track_ref,
+                            air_ref,
+                            compound_int_c,
+                            session_type_int,
+                            rng_i,
+                        )
+                        lap_times = model.rollout_mc(
+                            ctx_seed,
+                            stint_len,
+                            pace_intent,
+                            t_track,
+                            t_air,
+                            compound_int_c,
+                            base_lap_time=base_lap_time,
+                            rng=rng_i,
+                        )
+                        traffic_noise = float(rng_i.normal(
+                            traffic_mu * stint_len,
+                            traffic_sigma * math.sqrt(max(1, stint_len)),
+                        ))
+                        sim_total += float(np.sum(lap_times)) + traffic_noise
+
+                    totals[sim_i] = sim_total
+
+        else:
+            # --- LSTM / legacy path: vectorised (deterministic base curve + noise) ---
+            curves = self._precompute_pace_curves(context.year, circuit_id, driver_id, context)
+            for stint_len, compound in zip(candidate.stint_lengths, candidate.compounds):
+                series = curves.get(compound.upper())
+                if series is None or len(series) < stint_len:
+                    base  = stats.get(compound.upper(), {}).get("base",  90.0)
+                    slope = stats.get(compound.upper(), {}).get("slope",  0.05)
+                    series = self._predict_stint(
+                        model, driver_id, compound.upper(), stint_len, context, base, slope, circuit_id
+                    )
+                base_sum = float(np.sum(series[:stint_len]))
+                noise    = np.random.normal(
+                    traffic_mu * stint_len,
+                    traffic_sigma * math.sqrt(stint_len),
+                    size=n_sim,
+                )
+                totals += base_sum + noise
 
         totals += pit_loss * len(candidate.stop_laps)
         totals += np.where(sc_events, 15.0, 0.0)
@@ -411,6 +640,12 @@ class StrategyEngine:
                 traffic_sigma=0.05,
             )
             score = mean + risk_bias * var
+            # Bias first-stint compound: soft preferred, medium slight nudge, hard very rare.
+            first_compound = candidate.compounds[0].upper() if candidate.compounds else ""
+            if first_compound == "HARD":
+                score += 50.0   # ~50 s penalty — hard-start almost never surfaces
+            elif first_compound == "MEDIUM":
+                score += 2.0    # 2 s nudge — medium-start still valid but not default
             if opponent_best is not None and mean > opponent_best:
                 score += (mean - opponent_best) * 0.25
             ranked.append((score, mean, var, candidate))
@@ -419,6 +654,7 @@ class StrategyEngine:
 
         final = []
         seen = set()
+        hard_starts_included = 0
         topk = ranked[:MC_TOP_K]
         refined = {}
         for score, mean, var, candidate in topk:
@@ -440,6 +676,11 @@ class StrategyEngine:
             key = self._cluster_key(candidate)
             if key in seen:
                 continue
+            # Cap hard-starts at 1 per output: they are valid but should be rare.
+            if candidate.compounds and candidate.compounds[0].upper() == "HARD":
+                if hard_starts_included >= 1:
+                    continue
+                hard_starts_included += 1
             seen.add(key)
             strategy_fingerprint = {
                 "year": year,
@@ -500,15 +741,41 @@ class StrategyEngine:
 
 
 @lru_cache(maxsize=16)
-def _load_model_cached(driver_id: int) -> Tuple[LSTMPaceModel, int]:
+def _load_model_cached(driver_id: int):
+    """
+    Load a pace model from disk.  Supports both the new Transformer format
+    (model_type="transformer") and old LSTM payloads (no model_type key).
+    """
     path = MODELS_DIR / f"driver_{driver_id}.joblib"
     if not path.exists():
         path = MODELS_DIR / "global.joblib"
     payload = joblib.load(path)
-    bundle: ModelBundle = payload["bundle"]
-    input_dim = payload["input_dim"]
-    model = LSTMPaceModel(context_len=payload["context_len"])
-    model.load(bundle, input_dim)
+    bundle = payload["bundle"]
+    input_dim = payload.get("input_dim", 8)
+    context_len = payload.get("context_len", DEFAULT_CONTEXT_LAPS)
+    model_type = payload.get("model_type", "lstm")  # backward-compat discriminator
+
+    if model_type == "transformer_v2":
+        from .models_transformer import TransformerPaceModel  # noqa: PLC0415
+        mkwargs = payload.get("model_kwargs", {})
+        model   = TransformerPaceModel(
+            context_len=context_len,
+            model_version="v2",
+            **mkwargs,
+        )
+        model.load(bundle, input_dim)
+        model.practice_dist = payload.get("practice_dist")
+    elif model_type == "transformer":
+        from .models_transformer import TransformerPaceModel  # noqa: PLC0415
+        model = TransformerPaceModel(context_len=context_len, model_version="v1")
+        model.load(bundle, input_dim)
+        model.practice_dist = payload.get("practice_dist")
+    else:
+        # Legacy LSTM payload
+        from .models_lstm import LSTMPaceModel  # noqa: PLC0415
+        model = LSTMPaceModel(context_len=context_len)
+        model.load(bundle, input_dim)
+
     return model, input_dim
 
 
