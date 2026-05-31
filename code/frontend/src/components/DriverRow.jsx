@@ -39,11 +39,11 @@ export default function DriverRow({
     [onRowChange, row.id],
   );
   const onTeamChange = useCallback(
-    (value) => onRowChange(row.id, { team: value, driverId: "", data: null, status: "idle", selectedStrategyId: null }),
+    (value) => onRowChange(row.id, { team: value, driverCode: "", data: null, status: "idle", selectedStrategyId: null }),
     [onRowChange, row.id],
   );
   const onDriverChange = useCallback(
-    (value) => onRowChange(row.id, { driverId: Number(value), data: null, status: "idle", selectedStrategyId: null }),
+    (value) => onRowChange(row.id, { driverCode: value, data: null, status: "idle", selectedStrategyId: null }),
     [onRowChange, row.id],
   );
   return (
@@ -51,11 +51,11 @@ export default function DriverRow({
       <aside className="driver-rail">
         <div className="row-head">
           <span className="row-slot-label">{t("row.slot", { n: row.id })}</span>
-          {row.driverId && (() => {
-            const d = drivers.find(dr => String(dr.driver_id) === String(row.driverId));
+          {row.driverCode && (() => {
+            const d = drivers.find(dr => dr.driver_code === row.driverCode);
             return d ? (
               <span className="row-driver-hero" style={{ color: tint }}>
-                {d.driver_code || d.driver_id}
+                {d.driver_code}
               </span>
             ) : null;
           })()}
@@ -74,14 +74,14 @@ export default function DriverRow({
         <label>
           {t("row.driver")}
           <select
-            value={row.driverId || ""}
+            value={row.driverCode || ""}
             onChange={(e) => onDriverChange(e.target.value)}
             disabled={!rowDrivers.length}
           >
             <option value="">{t("row.select")}</option>
             {rowDrivers.map((d) => (
-              <option key={d.driver_id} value={d.driver_id}>
-                {d.driver_code || d.driver_id}
+              <option key={d.driver_code} value={d.driver_code}>
+                {d.driver_code}
               </option>
             ))}
           </select>

@@ -35,10 +35,10 @@ const getPreferredTheme = () => {
   return prefersDark ? "dark" : "light";
 };
 
-const mkRow = (id, team = "", driverId = "") => ({
+const mkRow = (id, team = "", driverCode = "") => ({
   id,
   team,
-  driverId,
+  driverCode,
   data: null,
   status: "idle",
   selectedStrategyId: null,
@@ -63,7 +63,7 @@ const hydrateRowsFromMetadata = (rows, teamsData = [], driversData = []) => {
       ...row,
       id: idx + 1,
       team,
-      driverId: row.driverId || fallbackDriver?.driver_id || "",
+      driverCode: row.driverCode || fallbackDriver?.driver_code || "",
       data: null,
       status: "idle",
       selectedStrategyId: null,
@@ -189,7 +189,7 @@ export default function App() {
 
   const canRun = useMemo(() => {
     if (!season || !circuitId || metadataStatus !== "ready") return false;
-    return rows.some((r) => r.driverId);
+    return rows.some((r) => r.driverCode);
   }, [season, circuitId, metadataStatus, rows]);
 
   const dataQuality = useMemo(() => {
@@ -204,15 +204,15 @@ export default function App() {
   const runPreRace = async () => {
     if (!canRun) return;
     dispatch({ type: SET_RUNNING, payload: true });
-    dispatch({ type: SET_ROWS, payload: rows.map((row) => ({ ...row, status: row.driverId ? "loading" : "idle" })) });
+    dispatch({ type: SET_ROWS, payload: rows.map((row) => ({ ...row, status: row.driverCode ? "loading" : "idle" })) });
 
     const work = rows.map(async (row) => {
-      if (!row.driverId) return { id: row.id, status: "idle", data: null };
+      if (!row.driverCode) return { id: row.id, status: "idle", data: null };
       try {
         const res = await api.post("/api/strategy", {
           year: Number(season),
           circuit_id: circuitId,
-          driver_id: Number(row.driverId),
+          driver_code: row.driverCode,
           force_recompute: true,
         });
         return { id: row.id, status: "ready", data: res.data, selectedStrategyId: null };
@@ -234,13 +234,13 @@ export default function App() {
 
   const retryRow = useCallback(async (rowId) => {
     const row = rows.find((r) => r.id === rowId);
-    if (!row?.driverId) return;
+    if (!row?.driverCode) return;
     dispatch({ type: SET_ROWS, payload: rows.map((r) => r.id === rowId ? { ...r, status: "loading" } : r) });
     try {
       const res = await api.post("/api/strategy", {
         year: Number(season),
         circuit_id: circuitId,
-        driver_id: Number(row.driverId),
+        driver_code: row.driverCode,
         force_recompute: true,
       });
       dispatch({ type: SET_ROWS, payload: rows.map((r) =>
