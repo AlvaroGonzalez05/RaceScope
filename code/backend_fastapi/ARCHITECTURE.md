@@ -1,7 +1,7 @@
-# Backend Architecture — Transformer v2 Pace Model
+# Backend Architecture — Transformer Pace Models (v1 / v2 / v3)
 
-> Last updated: 2026-05-18
-> Model files: `models/driver_*.joblib` (trained 2026-05-18, `model_type: transformer_v2`)
+> Last updated: 2026-05-25
+> Model files: `models/driver_*.joblib` (trained 2026-05-25, `model_type: transformer_v3`)
 > Source: `app/models_transformer.py`, `app/strategy_engine.py`, `app/config.py`
 
 ---
@@ -190,21 +190,119 @@ Total ≈ 4,764,299 parameters
 
 ---
 
-## 3. Backward Compatibility — v1 & LSTM
+## 3. Transformer v3 Architecture — `TyreDegradationTransformerV3`
 
-`_load_model_cached` in `strategy_engine.py` discriminates on `model_type` from the joblib payload:
+**Active model since 2026-05-25.** Medium-size variant: ~14M parameters.
 
-| `model_type` value | Class loaded | Notes |
+### 3.1 Key differences vs v2
+
+| Aspect | v2 | v3 |
 |---|---|---|
-| `"transformer_v2"` | `TyreDegradationTransformerV2` | Current default |
-| `"transformer"` | `TyreTransformerNet` (v1) | Legacy, kept for compat |
-| absent | `LSTMPaceModel` | Old LSTM payloads |
+| d_model | 256 | **384** |
+| n_layers | 6 | **8** |
+| dim_ff | 1024 | **1536** |
+| n_heads | 8 | 8 |
+| context_len | 25 | **40** |
+| dropout | 0.1 | **0.0** (intentional overfit) |
+| weight_decay | 1e-4 | **0.0** |
+| Continuous features | 14 | **15** (+`stint_number_norm`) |
+| Output heads | 3 | **4** (+`head_value`) |
+| Circuit prior | additive bias | **multiplicative CC gate** |
+| compound_idx_static | — | **yes** (per-stint scalar) |
+| Parameters | ~4.8M | **~14.3M** |
+| Joblib size | ~18 MB | **~56 MB** |
 
-`TyreTransformerNet` (v1) is preserved in `models_transformer.py` and fully functional. It uses 6 continuous features, d_model=256, 4 layers.
+### 3.2 New feature: `stint_number_norm` (index 14)
+
+```
+stint_number_norm = clip((stint_number - 1) / 3.0, 0.0, 1.5)
+```
+- Stint 1 → 0.0  |  Stint 2 → 0.33  |  Stint 3 → 0.67  |  Stint 6+ → 1.5 (clipped)
+
+Differentiates tyre behaviour across stints (fuel load, track rubber, thermal history).
+
+### 3.3 Circuit×Compound multiplicative gate
+
+The key architectural innovation. A sigmoid-gated mask over all 768 feature dimensions,
+computed from the joint (circuit, compound) static embedding:
+
+```
+circ_v = circuit_emb(circuit_idx)               # (B, 48)
+comp_v = compound_emb_gate(compound_idx_static)  # (B, 24)
+gate   = sigmoid(LayerNorm(Linear([circ_v||comp_v] → d_model)))  # (B, d_model)
+x      = x * gate.unsqueeze(1)                   # element-wise per timestep
+```
+
+Effect: dimensions relevant for degradation at Monaco+SOFT are amplified;
+irrelevant dimensions suppressed. An additive prior (v2) cannot suppress dimensions.
+LayerNorm before sigmoid ensures gate ≈ 0.5 at init (neutral → progressive specialisation).
+
+### 3.4 Fourth output head: `head_value`
+
+Predicts normalised cumulative remaining-stint cost:
+
+```
+y_value[i] = sum(lap_times[i+1 .. end_of_stint]) / (remaining_laps × lap_std)
+```
+
+Used by `_stop_profitability()` to estimate whether an additional pit stop is cost-effective.
+Not used during autoregressive rollout (only `head_delta` drives lap-by-lap prediction).
+
+### 3.5 `stop_profitability` in the strategy engine
+
+```python
+profit(stop_i) = E[t_old for L laps] - E[t_fresh for L laps] - pit_loss
+```
+- `profit > 0` → stopping recovers more time than is lost in the pitlane
+- `profit < 0` → better to stay out
+
+Computed from pace curves in `_stop_profitability()` and returned in `StrategyOut.stop_profitability`.
+
+### 3.6 v3 Hyperparameters (`config.py`)
+
+| Constant | Value |
+|---|---|
+| `TRANSFORMER_V3_D_MODEL` | 384 |
+| `TRANSFORMER_V3_N_HEADS` | 8 |
+| `TRANSFORMER_V3_N_LAYERS` | 8 |
+| `TRANSFORMER_V3_DIM_FF` | 1536 |
+| `TRANSFORMER_V3_DROPOUT` | 0.0 |
+| `TRANSFORMER_V3_CONTEXT_LAPS` | 40 |
+| `TRANSFORMER_V3_INPUT_DIM` | 15 |
+| `TRANSFORMER_V3_AUX_LOSS_W` | 0.10 |
+| `TRANSFORMER_V3_DEG_LOSS_W` | 0.25 |
+| `TRANSFORMER_V3_VALUE_LOSS_W` | 0.20 |
+| `TRANSFORMER_V3_N_SIM` | 100 |
+
+### 3.7 v3 Training Setup
+
+| Setting | Value |
+|---|---|
+| Optimiser | AdamW (lr=2e-4, weight_decay=0.0) |
+| Scheduler | OneCycleLR |
+| Loss | `Huber(Δlap) + 0.10·MSE(abs) + 0.25·MSE(deg) + 0.20·MSE(value)` |
+| Max epochs | 30 |
+| Early stopping | patience=5 on val_mae |
+| Grad clipping | norm ≤ 1.0 |
 
 ---
 
-## 4. Vocabulary Encodings
+## 4. Backward Compatibility — v1, v2 & LSTM
+
+`_load_model_cached` in `strategy_engine.py` discriminates on `model_type`:
+
+| `model_type` value | Class loaded | Notes |
+|---|---|---|
+| `"transformer_v3"` | `TyreDegradationTransformerV3` | **Current default** |
+| `"transformer_v2"` | `TyreDegradationTransformerV2` | Older joblibs |
+| `"transformer"` | `TyreTransformerNet` (v1) | Legacy |
+| absent | `LSTMPaceModel` | Old LSTM payloads |
+
+`_simulate_strategy` checks in order: v3 → v2 → v1/LSTM.
+
+---
+
+## 5. Vocabulary Encodings
 
 ### Compound (vocab size 10)
 | Token | Index |
@@ -237,7 +335,7 @@ Total ≈ 4,764,299 parameters
 
 ---
 
-## 5. Autoregressive MC Rollout (v2)
+## 6. Autoregressive MC Rollout (v2 / v3)
 
 Used at inference time inside `strategy_engine._simulate_strategy()`.
 
@@ -294,12 +392,12 @@ class PracticeDistribution:
 
 ---
 
-## 6. Joblib Payload Format (v2)
+## 7. Joblib Payload Format (v3)
 
 ```python
 {
     "bundle": ModelBundle(
-        model_state = OrderedDict,   # state_dict of TyreDegradationTransformerV2
+        model_state = OrderedDict,   # state_dict of TyreDegradationTransformerV3
         encoders    = {
             "compound":     {str: int},
             "lap_type":     {str: int},
@@ -314,12 +412,12 @@ class PracticeDistribution:
             "circuit_compound_stats": dict,  # per (circuit, compound) telemetry μ/σ
         },
     ),
-    "input_dim":    14,
-    "context_len":  25,
-    "model_type":   "transformer_v2",
+    "input_dim":    15,
+    "context_len":  40,
+    "model_type":   "transformer_v3",
     "model_kwargs": {
-        "d_model": 256, "n_heads": 8, "n_layers": 6,
-        "dim_ff": 1024, "dropout": 0.1,
+        "d_model": 384, "n_heads": 8, "n_layers": 8,
+        "dim_ff": 1536, "dropout": 0.0,
     },
     "practice_dist": {compound_str: PracticeDistribution, ..., "global": PracticeDistribution},
 }
@@ -327,7 +425,7 @@ class PracticeDistribution:
 
 ---
 
-## 7. Sequence Building (training, v2)
+## 8. Sequence Building (training)
 
 ```
 For each (session_key, driver_id) group:
@@ -358,20 +456,22 @@ For each (session_key, driver_id) group:
 
 ---
 
-## 8. Benchmark (v1 vs v2, measured 2026-05-18)
+## 9. Benchmark (v1 / v2 / v3, measured 2026-05-25, CPU)
 
-| Metric | v1 | v2 |
-|---|---|---|
-| Parameters | 26,517 | 4,764,299 |
-| State dict size | 0.1 MB | 18.2 MB |
-| Forward pass (batch=1) | 0.2 ms | 1.2 ms |
-| Forward throughput (batch=32) | 32,116 /s | 3,195 /s |
-| Rollout MC (20 laps) | 4.1 ms | 26.9 ms |
-| MC rollouts/sec | 244 | 37 |
-| Training (500 samples, 1 epoch) | 62 ms | 800 ms |
+Generated by `scripts/benchmark_architectures.py`.
 
-v2 inference is ~6× slower per forward pass on CPU, but well within the per-request budget (500 rollouts × 26.9 ms ≈ 13.5 s total, handled off hot-path and cached).
+| Metric | v1 | v2 | v3 |
+|---|---|---|---|
+| Parameters | 26,517 | 4,764,299 | 14,287,364 |
+| Joblib size | ~0.1 MB | ~18 MB | ~56 MB |
+| Train time / epoch (n=512) | 0.05 s | 0.78 s | 1.08 s |
+| Inference 1×60 laps | 11 ms | 69 ms | 185 ms |
+| Inference 100×60 laps (batched MC) | 122 ms | 1,570 ms | 4,595 ms |
+| Factor vs v1 (batched) | 1× | 13× | 38× |
+
+v3 batched MC (100 sims × 60 laps) takes ~4.6 s per strategy on CPU.
+Top-K=3 strategies → ~14 s per `/api/strategy` request (cached after first call).
 
 ---
 
-*Update this file whenever `TyreDegradationTransformerV2`, `PracticeDistribution`, or the MC rollout logic in `strategy_engine.py` changes.*
+*Update this file whenever `TyreDegradationTransformerV3`, `PracticeDistribution`, or the MC rollout logic in `strategy_engine.py` changes.*

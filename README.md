@@ -24,9 +24,9 @@ La arquitectura actual se divide en tres bloques.
 - Datos/modelos/cache: `code/backend_fastapi/data`, `code/backend_fastapi/models`, `code/backend_fastapi/cache`
 
 ### Flujo de alto nivel
-1. Ingesta OpenF1 y guardado en parquet.
-2. Preprocesado y feature store.
-3. Entrenamiento de modelos (LSTM por piloto + perfil parametrico).
+1. Ingesta OpenF1 y guardado en parquet (capa bronze).
+2. Preprocesado y feature store (capas silver → gold).
+3. Entrenamiento de modelos (Transformer v3 por piloto + perfil parametrico).
 4. Simulacion de estrategias (analitico + refino MC top-K).
 5. API FastAPI expone metadata y estrategias.
 6. Frontend consume API y renderiza comparaciones.
@@ -43,22 +43,24 @@ Entrada:
 - OpenF1 (`sessions`, `laps`, `stints`, `weather`, `drivers`).
 
 Salida:
-- `code/backend_fastapi/data/raw/year=<YYYY>/.../*.parquet`
+- `code/backend_fastapi/data/bronze/year=<YYYY>/.../*.parquet`
 
 ### 3.2 Preprocesado
 Script:
 - `code/backend_fastapi/scripts/preprocess.py`
 
 Salida principal:
-- `code/backend_fastapi/data/features/year=<YYYY>/features.parquet`
-- `code/backend_fastapi/data/features/metadata/*.parquet`
+- `code/backend_fastapi/data/gold/year=<YYYY>/features.parquet`
+- `code/backend_fastapi/data/gold/metadata/*.parquet`
 
-### 3.3 Entrenamiento LSTM
+### 3.3 Entrenamiento Transformer v3
 Script:
 - `code/backend_fastapi/scripts/train_models.py`
 
+Arquitectura activa: **Transformer v3 medium** (d_model=384, 8 capas, 15 features, 4 heads, ~14.3M params).
+
 Salida:
-- `code/backend_fastapi/models/driver_<id>.joblib`
+- `code/backend_fastapi/models/driver_<code>.joblib`
 - `code/backend_fastapi/models/global.joblib`
 
 ### 3.4 Entrenamiento perfil de piloto
@@ -138,7 +140,7 @@ Se mantienen temporalmente:
 {
   "year": 2023,
   "circuit_id": "Sakhir",
-  "driver_id": 14,
+  "driver_code": "VER",
   "risk_bias": 0.15,
   "n_strategies": 5,
   "debug_profile": false,
@@ -146,18 +148,27 @@ Se mantienen temporalmente:
 }
 ```
 
+`driver_code` es el identificador principal (3 letras: VER, HAM, LEC…).
+
 ### 6.4 Response /strategy (resumen)
 ```json
 {
   "year": 2023,
   "circuit_id": "Sakhir",
-  "driver_id": 14,
-  "compute_meta": {"cache_hit": false, "mc_executed": true, "elapsed_ms": 512.4},
+  "compute_meta": {"cache_hit": false, "elapsed_ms": 4200, "data_mode": "snapshot"},
   "context": {"total_laps": 57, "track_temp": 29.6, "air_temp": 25.9, "pit_loss": 22.5, "sc_probability": 0.2},
-  "strategies": [...],
-  "degradation": {...}
+  "strategies": [
+    {
+      "type": "1-stop",
+      "compounds": ["SOFT", "MEDIUM"],
+      "stop_profitability": [18.3],
+      "..."
+    }
+  ]
 }
 ```
+
+`stop_profitability`: ganancia neta en segundos por cada parada (positivo = parar vale la pena).
 
 ### 6.5 Errores esperables
 - `400`: no hay features cargadas.
@@ -233,7 +244,7 @@ cp .env.example .env
 ```bash
 python -m scripts.ingest_season --year 2023 --sleep-s 1.5 --min-interval 1.2
 python -m scripts.preprocess --year 2023
-python -m scripts.train_models --min-laps 260 --epochs 12
+python -m scripts.train_models --model-version v3 --epochs 30 --patience 5
 python -m scripts.train_profiles --min-laps 160
 ```
 
@@ -272,9 +283,8 @@ lsof -i :8000 -n -P
 lsof -i :5173 -n -P
 
 # 3) validar artefactos minimos
-ls code/backend_fastapi/data/features/year=2023/features.parquet
+ls code/backend_fastapi/data/gold/year=2023/features.parquet
 ls code/backend_fastapi/models/global.joblib
-ls code/backend_fastapi/models/driver_14.joblib
 ```
 
 ### Arranque de demo (single-origin)
@@ -294,7 +304,7 @@ Abrir: `http://127.0.0.1:8000`
 2. `Pre-race`: seleccionar temporada/circuito/pilotos.
 3. Pulsar `Calcular`.
 4. Mostrar top estrategias con curvas, stints y pit windows.
-5. Caso estable de contingencia: `2023 / Sakhir / 14`.
+5. Caso estable de contingencia: `2023 / Sakhir / VER`.
 
 ---
 
@@ -303,7 +313,7 @@ Abrir: `http://127.0.0.1:8000`
 ### 9.1 Pantalla sin datos
 Comprobar:
 1. `GET /api/metadata/seasons` devuelve datos.
-2. Existe `data/features/year=.../features.parquet`.
+2. Existe `data/gold/year=.../features.parquet`.
 3. No hay backend viejo en otro puerto/origen.
 4. Para demo estable, usar snapshot local con `OPENF1_AUTH_ENABLED=false` en `.env`.
 5. Si OpenF1 devuelve 401 en ingesta, revisar `OPENF1_USERNAME` y `OPENF1_PASSWORD`.
@@ -336,7 +346,7 @@ Preferir single-origin (`frontend/dist` servido por FastAPI). Evita discrepancia
 ### 9.4 Falta de modelos/perfiles
 Reejecutar:
 ```bash
-python -m scripts.train_models --min-laps 260 --epochs 12
+python -m scripts.train_models --model-version v3 --epochs 30 --patience 5
 python -m scripts.train_profiles --min-laps 160
 ```
 
@@ -367,11 +377,13 @@ cd "code/backend_fastapi"
 ## 11) Decisiones tecnicas y tradeoffs
 1. **Analitico + MC top-K**
    - reduce coste sin perder utilidad de ranking.
-2. **Perfil parametrico + LSTM**
-   - equilibrio entre interpretabilidad y capacidad predictiva.
-3. **Single-origin**
-   - elimina clase de errores frecuentes de CORS y origen cruzado.
-4. **Compatibilidad legacy temporal**
+2. **Transformer v3 medium + perfil parametrico**
+   - el Transformer memoriza la curva real de degradacion por piloto/circuito/compuesto; el perfil parametrico actua como fallback interpretable.
+3. **stop_profitability explicito**
+   - calculo marginal por parada evita sesgo hacia 2 paradas cuando el desgaste real es bajo.
+4. **Single-origin / Vite proxy**
+   - elimina clase de errores frecuentes de CORS: en dev el proxy de Vite reenvía `/api` a `:8000`; en demo FastAPI sirve `dist/` directamente.
+5. **Compatibilidad legacy temporal**
    - evita romper clientes existentes durante migracion a `/api`.
 
 ---
@@ -389,10 +401,10 @@ cd "code/backend_fastapi"
 Caso base estable:
 - `year=2023`
 - `circuit_id=Sakhir`
-- `driver_id=14`
+- `driver_code=VER`
 
 ```bash
 curl -s -X POST http://localhost:8000/api/strategy \
   -H "Content-Type: application/json" \
-  -d '{"year":2023,"circuit_id":"Sakhir","driver_id":14}'
+  -d '{"year":2023,"circuit_id":"Sakhir","driver_code":"VER"}' | python -m json.tool | head -40
 ```
