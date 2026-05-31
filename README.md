@@ -92,28 +92,51 @@ Fallbacks:
 
 ---
 
-## 5) Motor de estrategia (analitico + MC top-K)
+## 5) Motor de estrategia (tres motores colaborando)
 Archivo:
 - `code/backend_fastapi/app/strategy_engine.py`
+- Documento detallado: `code/backend_fastapi/STRATEGY_CONSTRUCTION.md`
 
-### 5.1 Precompute de curvas
-Por request `(year, circuit_id, driver_id)` se generan o reutilizan curvas de ritmo por compuesto.
+### 5.1 Fase 1 — Generacion analitica de candidatas
+`_pace_table` consulta `DriverProfile` y devuelve `(pace_base, deg_rate)`
+por compuesto, corregido por temperatura del contexto. Con eso,
+`_candidate_strategies` resuelve la vuelta de parada optima por forma
+cerrada (1-stop) o sistema lineal 2x2 (2-stop):
+
+- `s* = ((pace_B - pace_A) + (deg_A - deg_B)/2 + deg_B * L) / (deg_A + deg_B)`
+
+Cada candidata pasa un filtro de rentabilidad: si todas sus paradas
+tienen `profit_i = (t_old - t_fresh) - pit_loss < 0`, se descarta antes
+del ranking. Reglas F1: ≥1 parada, ≥2 compuestos distintos.
+
+### 5.2 Precompute de curvas (Transformer)
+Por request `(year, circuit_id, driver_id)` se generan o reutilizan
+curvas de ritmo por compuesto. Estas curvas vienen del **Transformer v3**
+y capturan no-linealidades (caida del neumatico al final del stint,
+sensibilidad Circuit x Compound, embeddings de stint y vuelta).
 
 Cache en disco:
 - `code/backend_fastapi/cache/pace_curves/*.parquet`
 
-### 5.2 Fase A: evaluacion analitica
-Para todas las estrategias candidatas:
-- estimacion de esperanza de tiempo total
+### 5.3 Fase 2 — Ranking analitico (mean + lambda * var)
+Para todas las candidatas filtradas:
+- estimacion de esperanza de tiempo total sobre curvas del Transformer
 - estimacion de varianza
 - ajuste por SC y perdida de pit
 
-### 5.3 Fase B: refino Monte Carlo top-K
-Solo las K mejores (`MC_TOP_K`) se refinan con simulacion estocastica.
+### 5.4 Fase 3 — Refino Monte Carlo top-K
+Solo las K mejores (`MC_TOP_K = 3`) se refinan con simulacion
+estocastica del Transformer v3 (100 simulaciones batched por estrategia).
 
 Ventaja:
-- casi la misma calidad de ranking
-- coste computacional muy inferior a full-MC para todas
+- la vuelta de parada se calcula, no se busca por fuerza bruta
+- el MC se ejecuta solo sobre el subconjunto ya prometedor
+- distribucion realista del tiempo total, no un unico numero
+
+### 5.5 Fase 4 — Filtro de salida
+HARD-start (`compounds[0] == "HARD"`) se excluye duro del payload:
+en F1 moderna es competitivamente irreal y no debe mostrarse aunque la
+matematica lo permita.
 
 ---
 

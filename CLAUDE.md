@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**RaceScope Strategy Lab** — a Formula 1 pre-race strategy explorer. Given a season, circuit, and driver, it simulates and ranks pit-stop strategies using a two-phase engine: analytical scoring of all candidates, followed by Monte Carlo refinement of only the top-K.
+**RaceScope Strategy Lab** — a Formula 1 pre-race strategy explorer. Given a season, circuit, and driver, it generates and ranks pit-stop strategies with three collaborating motors: a linear `DriverProfile` solves the analytical break-even (when to pit), a Transformer v3 predicts non-linear pace and refines the Top-K via Monte Carlo, and a mean-variance heuristic orders all candidates. See `code/backend_fastapi/STRATEGY_CONSTRUCTION.md` for the full pipeline.
 
 The repo has two runnable parts:
 - `code/backend_fastapi/` — Python FastAPI backend (data pipeline + simulation API)
@@ -116,6 +116,21 @@ Key test names in `tests/test_transformer_model.py`:
 | `test_v3_stop_profitability_positive` | `_stop_profitability` returns positive profit when fresh tyre saves time |
 | `test_v3_stop_profitability_negative` | `_stop_profitability` returns negative profit when pit cost exceeds tyre gain |
 
+Key test names in `tests/test_strategy_engine.py` (analytical redesign):
+
+| Test | What it checks |
+|---|---|
+| `TestPitLossClamp15_45::test_clamp_lower_at_15` | `_derive_pit_loss` clamped at new lower bound 15 s |
+| `TestPitLossClamp15_45::test_clamp_upper_at_45` | `_derive_pit_loss` clamped at new upper bound 45 s |
+| `TestPaceTable::test_temperature_correction_applied` | `_pace_table` adds `track_coef · ΔT_track` to `base` |
+| `TestPaceTable::test_returns_all_three_compounds` | `_pace_table` returns SOFT, MEDIUM, HARD entries |
+| `TestBreakEvenAnalytic::test_1stop_optimum_matches_closed_form` | Closed-form `s*` matches numerical minimum within 1 lap |
+| `TestBreakEvenAnalytic::test_2stop_optimum_close_to_numerical` | 2x2 linear system matches numerical minimum within 2 laps |
+| `TestCandidateGeneration::test_unprofitable_stop_dropped` | Candidates with no profitable stop are filtered before ranking |
+| `TestCandidateGeneration::test_at_least_two_compounds` | Every generated candidate uses ≥2 distinct compounds (F1 rule) |
+| `TestCandidateGeneration::test_at_least_one_stop` | Every generated candidate has ≥1 stop (F1 rule) |
+| `TestHardStartFilteredOut::test_no_hard_start_in_final_strategies` | HARD-start hard-filtered from payload |
+
 ---
 
 ## Architecture
@@ -128,8 +143,8 @@ Key test names in `tests/test_transformer_model.py`:
 | `config.py` | All paths and tunable constants; reads `.env` at import time |
 | `schemas.py` | Pydantic response models (`StrategyResponse`, `CompareResponse`, `DriverOut`, etc.) |
 | `data_store.py` | Loads parquet features/metadata via `lru_cache`; manages `snapshot_state.json` |
-| `strategy_engine.py` | Two-phase engine: analytical scoring → MC top-K refinement |
-| `driver_profile.py` | Parametric pace model per driver/circuit/compound with 4-level fallback |
+| `strategy_engine.py` | Three motors: `_pace_table` (linear profile) generates candidates by closed-form break-even; `_analytical_eval` ranks all with `mean + λ·var`; `_simulate_strategy` refines Top-K via Transformer MC. HARD-start hard-filtered from output. |
+| `driver_profile.py` | Parametric pace model per driver/circuit/compound with 4-level fallback (source of truth for `_pace_table`) |
 | `models_lstm.py` | LSTM model wrapper (lazy-loaded at first strategy request) |
 | `models_transformer.py` | Transformer pace models: `TyreTransformerNet` (v1), `TyreDegradationTransformerV2`, `TyreDegradationTransformerV3` (current, d_model=384, 8 layers, 15 features, 4 heads). Wrapper: `TransformerPaceModel`. Rollout: `rollout_mc` dispatches per model version. |
 | `train.py` | Internal training logic called by `scripts/train_models.py` |
@@ -187,6 +202,10 @@ Design principle: the Pre-race strategy area uses full viewport width (no side p
 | `MC_TOP_K` | 3 | How many strategies get Monte Carlo refinement |
 | `DEFAULT_RISK_LAMBDA` | 0.15 | Default risk bias for strategy ranking |
 | `DEFAULT_STRATEGY_COUNT` | 5 | Strategies returned per request |
+| `PIT_LOSS_FALLBACK` | 22.5 | Default pit-loss when no data |
+| `PIT_LOSS_MIN` | 15.0 | Hard lower clamp on `_derive_pit_loss` |
+| `PIT_LOSS_MAX` | 45.0 | Hard upper clamp on `_derive_pit_loss` |
+| `PIT_WINDOW_BIN` | 5 | Bin (laps) for `_cluster_key` strategy dedup |
 | `CACHE_TTL_SECONDS` | 86400 | Disk pace-curve cache TTL |
 | `RANDOM_SEED` | 42 | Reproducibility for MC simulation |
 | `TRANSFORMER_V3_D_MODEL` | 384 | Transformer v3 model dimension |

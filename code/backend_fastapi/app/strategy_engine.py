@@ -199,6 +199,32 @@ class StrategyEngine:
                 bounds[compound] = (default_lo, default_hi)
         return bounds
 
+    def _pace_table(
+        self,
+        driver_code: str,
+        circuit_id: str,
+        context: RaceContext,
+    ) -> Dict[str, Tuple[float, float]]:
+        """Para cada compuesto: (pace_base_s, deg_rate_s_per_lap).
+
+        Fuente única de ritmo y degradación para la fase analítica de
+        generación de candidatas. Se apoya en `DriverProfile` (lineal
+        por driver/circuit/compound con 3 niveles de fallback) y aplica
+        la corrección de temperatura del contexto actual.
+        """
+        profile = load_driver_profile(driver_code)
+        table: Dict[str, Tuple[float, float]] = {}
+        for compound in self.valid_compounds:
+            params = resolve_profile_params(profile, circuit_id, compound)
+            pace_base = (
+                params.base
+                + params.track_coef * (context.track_temp - params.track_ref)
+                + params.air_coef   * (context.air_temp   - params.air_ref)
+            )
+            deg_rate = max(float(params.slope), 0.0)
+            table[compound] = (float(pace_base), float(deg_rate))
+        return table
+
     def _load_model(self, driver_code: str):
         return _load_model_cached(driver_code)
 
@@ -214,63 +240,184 @@ class StrategyEngine:
             circuit_id,
         )
 
-    def _candidate_strategies(self, total_laps: int, bounds: Dict[str, Tuple[int, int]]) -> List[StrategyCandidate]:
-        compounds = [c for c in bounds.keys() if c in self.valid_compounds] or ["SOFT", "MEDIUM", "HARD"]
-        candidates = []
+    _MIN_STINT_LEN = 5  # vueltas mínimas para considerar un stint físicamente razonable
 
+    @staticmethod
+    def _candidate_profit(
+        compounds: List[str],
+        stint_lengths: List[int],
+        pace_table: Dict[str, Tuple[float, float]],
+        pit_loss: float,
+    ) -> List[float]:
+        """Profit analítico por cada parada de la candidata.
+
+        Para la parada i (entre stint i y stint i+1, ambos contados a
+        partir de 0): ¿cuánto tiempo perderíamos respecto a pararnos si
+        siguiéramos con el neumático viejo durante las vueltas del
+        stint i+1?
+
+        profit_i = (tiempo_con_viejo - tiempo_con_fresco) - pit_loss
+
+        Positivo → parar es rentable; negativo → mejor seguir.
+        """
+        profits: List[float] = []
+        for i in range(len(compounds) - 1):
+            so_far    = sum(stint_lengths[: i + 1])
+            remaining = stint_lengths[i + 1]
+            pace_old, deg_old = pace_table.get(compounds[i].upper(),     (90.0, 0.05))
+            pace_new, deg_new = pace_table.get(compounds[i + 1].upper(), (90.0, 0.05))
+            t_old = sum(
+                pace_old + deg_old * (so_far + k) for k in range(remaining)
+            )
+            t_new = sum(
+                pace_new + deg_new * k for k in range(remaining)
+            )
+            profits.append((t_old - t_new) - pit_loss)
+        return profits
+
+    def _candidate_strategies(
+        self,
+        total_laps: int,
+        bounds: Dict[str, Tuple[int, int]],
+        pace_table: Dict[str, Tuple[float, float]],
+        pit_loss: float,
+    ) -> List[StrategyCandidate]:
+        """Genera candidatas resolviendo analíticamente la vuelta de parada óptima.
+
+        Fórmula 1-stop A→B sobre L vueltas (suma cerrada de aritméticas):
+            T(s) = s·pace_A + deg_A·s(s-1)/2 + pit_loss
+                 + (L-s)·pace_B + deg_B·(L-s)(L-s-1)/2
+
+            dT/ds = 0  →
+            s* = ((pace_B − pace_A) + (deg_A − deg_B)/2 + deg_B·L) / (deg_A + deg_B)
+
+        Fórmula 2-stop A→B→C: sistema lineal 2×2 en (s1, s2).
+        """
+        compounds = [c for c in bounds.keys() if c in self.valid_compounds] or ["SOFT", "MEDIUM", "HARD"]
+        candidates: List[StrategyCandidate] = []
+        L = int(total_laps)
+
+        def clamp_stop(stop: float, c_a: str, c_b: str) -> int:
+            min_a, max_a = bounds.get(c_a, (self._MIN_STINT_LEN, L))
+            min_b, max_b = bounds.get(c_b, (self._MIN_STINT_LEN, L))
+            lo = max(min_a, L - max_b, self._MIN_STINT_LEN)
+            hi = min(max_a, L - min_b, L - self._MIN_STINT_LEN)
+            if lo >= hi:
+                return -1
+            return int(round(min(max(stop, lo), hi)))
+
+        # ---------------------------------------------------------------
+        # 1-stop: forma cerrada para cada par de compuestos
+        # ---------------------------------------------------------------
         for c1 in compounds:
             for c2 in compounds:
                 if c1 == c2:
                     continue
-                min1, max1 = bounds.get(c1, (10, 20))
-                min2, max2 = bounds.get(c2, (10, 20))
-                min_stop = max(min1, total_laps - max2)
-                max_stop = min(max1, total_laps - min2)
-                if min_stop >= max_stop:
+                pace_a, deg_a = pace_table.get(c1, (90.0, 0.05))
+                pace_b, deg_b = pace_table.get(c2, (90.0, 0.05))
+                denom = deg_a + deg_b
+                if denom <= 1e-6:
+                    # Sin degradación neta: optimum no está definido,
+                    # uso el centro físico de la ventana viable.
+                    min_a, max_a = bounds.get(c1, (8, L))
+                    min_b, max_b = bounds.get(c2, (8, L))
+                    lo = max(min_a, L - max_b)
+                    hi = min(max_a, L - min_b)
+                    if lo >= hi:
+                        continue
+                    s_star = (lo + hi) / 2.0
+                else:
+                    s_star = ((pace_b - pace_a) + (deg_a - deg_b) / 2.0 + deg_b * L) / denom
+
+                stop = clamp_stop(s_star, c1, c2)
+                if stop < 0:
                     continue
-                stop_lap = int((min_stop + max_stop) / 2)
+                len1, len2 = stop, L - stop
+                if len1 < self._MIN_STINT_LEN or len2 < self._MIN_STINT_LEN:
+                    continue
+
+                stint_lengths = [len1, len2]
+                profits = self._candidate_profit([c1, c2], stint_lengths, pace_table, pit_loss)
+                if all(p < 0.0 for p in profits):
+                    continue  # parada no rentable
+
+                min_a, max_a = bounds.get(c1, (self._MIN_STINT_LEN, L))
+                min_b, _ = bounds.get(c2, (self._MIN_STINT_LEN, L))
+                _, max_b = bounds.get(c2, (self._MIN_STINT_LEN, L))
+                pit_min = max(min_a, L - max_b, self._MIN_STINT_LEN)
+                pit_max = min(max_a, L - min_b, L - self._MIN_STINT_LEN)
                 candidates.append(
                     StrategyCandidate(
                         strategy_type="1-stop",
                         compounds=[c1, c2],
-                        stint_lengths=[stop_lap, total_laps - stop_lap],
-                        pit_windows=[{"lap_min": min_stop, "lap_max": max_stop}],
-                        stop_laps=[stop_lap],
+                        stint_lengths=stint_lengths,
+                        pit_windows=[{"lap_min": int(pit_min), "lap_max": int(pit_max)}],
+                        stop_laps=[stop],
                     )
                 )
 
+        # ---------------------------------------------------------------
+        # 2-stop: sistema 2x2 para cada triple con ≥2 compuestos
+        # ---------------------------------------------------------------
         for c1 in compounds:
             for c2 in compounds:
                 for c3 in compounds:
                     if len({c1, c2, c3}) < 2:
                         continue
-                    min1, max1 = bounds.get(c1, (8, 16))
-                    min2, max2 = bounds.get(c2, (8, 16))
-                    min3, max3 = bounds.get(c3, (8, 16))
+                    pace_a, deg_a = pace_table.get(c1, (90.0, 0.05))
+                    pace_b, deg_b = pace_table.get(c2, (90.0, 0.05))
+                    pace_c, deg_c = pace_table.get(c3, (90.0, 0.05))
 
-                    for stop1 in range(min1, max1 + 1, 2):
-                        remaining = total_laps - stop1
-                        min_stop2 = max(min2, remaining - max3)
-                        max_stop2 = min(max2, remaining - min3)
-                        if min_stop2 >= max_stop2:
-                            continue
-                        stop2 = stop1 + int((min_stop2 + max_stop2) / 2)
-                        len2 = stop2 - stop1
-                        len3 = total_laps - stop2
-                        if len3 < min3 or len3 > max3:
-                            continue
-                        candidates.append(
-                            StrategyCandidate(
-                                strategy_type="2-stop",
-                                compounds=[c1, c2, c3],
-                                stint_lengths=[stop1, len2, len3],
-                                pit_windows=[
-                                    {"lap_min": stop1 - 2, "lap_max": stop1 + 2},
-                                    {"lap_min": stop2 - 2, "lap_max": stop2 + 2},
-                                ],
-                                stop_laps=[stop1, stop2],
-                            )
+                    A = np.array([
+                        [deg_a + deg_b, -deg_b],
+                        [-deg_b,        deg_b + deg_c],
+                    ], dtype=float)
+                    rhs = np.array([
+                        (pace_b - pace_a) + (deg_a - deg_b) / 2.0,
+                        (pace_c - pace_b) + (deg_b - deg_c) / 2.0 + deg_c * L,
+                    ], dtype=float)
+
+                    if abs(np.linalg.det(A)) < 1e-6:
+                        # Sistema degenerado: reparto uniforme como fallback
+                        s1_star = L / 3.0
+                        s2_star = 2.0 * L / 3.0
+                    else:
+                        s1_star, s2_star = np.linalg.solve(A, rhs)
+
+                    min_a, max_a = bounds.get(c1, (self._MIN_STINT_LEN, L))
+                    min_b, max_b = bounds.get(c2, (self._MIN_STINT_LEN, L))
+                    min_c, max_c = bounds.get(c3, (self._MIN_STINT_LEN, L))
+
+                    s1 = int(round(min(max(s1_star, min_a), max_a)))
+                    s2_lo = max(s1 + min_b, L - max_c, self._MIN_STINT_LEN + s1)
+                    s2_hi = min(s1 + max_b, L - min_c, L - self._MIN_STINT_LEN)
+                    if s2_lo >= s2_hi:
+                        continue
+                    s2 = int(round(min(max(s2_star, s2_lo), s2_hi)))
+
+                    len1 = s1
+                    len2 = s2 - s1
+                    len3 = L - s2
+                    if min(len1, len2, len3) < self._MIN_STINT_LEN:
+                        continue
+
+                    stint_lengths = [len1, len2, len3]
+                    profits = self._candidate_profit([c1, c2, c3], stint_lengths, pace_table, pit_loss)
+                    if all(p < 0.0 for p in profits):
+                        continue
+
+                    candidates.append(
+                        StrategyCandidate(
+                            strategy_type="2-stop",
+                            compounds=[c1, c2, c3],
+                            stint_lengths=stint_lengths,
+                            pit_windows=[
+                                {"lap_min": int(s1 - 2), "lap_max": int(s1 + 2)},
+                                {"lap_min": int(s2 - 2), "lap_max": int(s2 + 2)},
+                            ],
+                            stop_laps=[s1, s2],
                         )
+                    )
 
         return candidates
 
@@ -740,14 +887,16 @@ class StrategyEngine:
         context = self._context(year, circuit_id)
         stats = self._compound_stats(driver_code, year, circuit_id)
         bounds = self._tyre_life_bounds(year, circuit_id)
+        pace_table = self._pace_table(driver_code, circuit_id, context)
         model, _ = self._load_model(driver_code)
         curves = self._precompute_pace_curves(year, circuit_id, driver_code, context)
 
-        candidates = self._candidate_strategies(context.total_laps, bounds)
+        candidates = self._candidate_strategies(context.total_laps, bounds, pace_table, context.pit_loss)
         opponent_best = None
         if opponent_code is not None:
             opp_curves = self._precompute_pace_curves(year, circuit_id, opponent_code, context)
-            opp_candidates = self._candidate_strategies(context.total_laps, bounds)
+            opp_pace_table = self._pace_table(opponent_code, circuit_id, context)
+            opp_candidates = self._candidate_strategies(context.total_laps, bounds, opp_pace_table, context.pit_loss)
             opp_scores = []
             for opp_candidate in opp_candidates:
                 mean, var = self._analytical_eval(
@@ -771,12 +920,11 @@ class StrategyEngine:
                 traffic_sigma=0.05,
             )
             score = mean + risk_bias * var
-            # Bias first-stint compound: soft preferred, medium slight nudge, hard very rare.
+            # Soft nudge: medium-start válido pero no por defecto.
+            # HARD-start no se penaliza aquí; se filtra duro a la salida.
             first_compound = candidate.compounds[0].upper() if candidate.compounds else ""
-            if first_compound == "HARD":
-                score += 50.0   # ~50 s penalty — hard-start almost never surfaces
-            elif first_compound == "MEDIUM":
-                score += 2.0    # 2 s nudge — medium-start still valid but not default
+            if first_compound == "MEDIUM":
+                score += 1.0
             if opponent_best is not None and mean > opponent_best:
                 score += (mean - opponent_best) * 0.25
             ranked.append((score, mean, var, candidate))
@@ -785,7 +933,6 @@ class StrategyEngine:
 
         final = []
         seen = set()
-        hard_starts_included = 0
         topk = ranked[:MC_TOP_K]
         refined = {}
         for score, mean, var, candidate in topk:
@@ -807,11 +954,11 @@ class StrategyEngine:
             key = self._cluster_key(candidate)
             if key in seen:
                 continue
-            # Cap hard-starts at 1 per output: they are valid but should be rare.
+            # Filtro duro: HARD-start no llega al payload final.
+            # Es competitivamente irreal en F1 moderna y el usuario no
+            # quiere ver estrategias que en la práctica nunca se ven.
             if candidate.compounds and candidate.compounds[0].upper() == "HARD":
-                if hard_starts_included >= 1:
-                    continue
-                hard_starts_included += 1
+                continue
             seen.add(key)
             strategy_fingerprint = {
                 "year": year,

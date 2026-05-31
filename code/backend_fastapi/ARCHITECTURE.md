@@ -47,9 +47,14 @@
                          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Strategy Engine  (app/strategy_engine.py)                           │
-│  Phase 1: Analytical pre-scorer (all candidates via OLS profile)    │
-│  Phase 2: Monte Carlo refinement of top-5                           │
-│    500 simulations × autoregressive Transformer v2 rollout          │
+│  Phase 1: _pace_table → break-even s* in closed form (1-stop) and   │
+│          2x2 linear system (2-stop) per compound combination;       │
+│          drop candidates with no profitable stop                    │
+│  Phase 2: Analytical pre-scorer (mean + λ·var) over Transformer     │
+│          pace curves; rank all candidates                           │
+│  Phase 3: Monte Carlo refinement of top-3                           │
+│          100 simulations × batched Transformer v3 rollout           │
+│  Phase 4: Hard filter — exclude HARD-start from payload             │
 │  Output: ranked StrategyResponse with pit_windows + stint_curves   │
 └─────────────────────────────────────────────────────────────────────┘
 ```

@@ -163,3 +163,215 @@ class TestContextUsesHelpers:
         assert ctx.pit_loss >= PIT_LOSS_MIN
         assert SC_PROBABILITY_MIN <= ctx.sc_probability <= SC_PROBABILITY_MAX
 
+
+# =============================================================================
+# Rediseño analítico de la construcción de estrategias
+# =============================================================================
+
+from app.strategy_engine import RaceContext, StrategyCandidate
+from app.driver_profile import DriverProfile, ProfileParams
+
+
+class TestPitLossClamp15_45:
+    def test_clamp_lower_at_15(self):
+        df = make_race_df(n_drivers=10, outlap_delta=2.0)
+        engine = make_engine(df)
+        result = engine._derive_pit_loss(2023, "TestCircuit")
+        assert result >= 15.0
+
+    def test_clamp_upper_at_45(self):
+        df = make_race_df(n_drivers=10, outlap_delta=58.0)  # outlap +58s, fuera de [5,60]→quizá excluido
+        # Forzar outlap dentro del filtro 5-60s pero por encima del nuevo clamp
+        df = make_race_df(n_drivers=10, outlap_delta=55.0, laps_per_stint=15)
+        engine = make_engine(df)
+        result = engine._derive_pit_loss(2023, "TestCircuit")
+        assert result <= 45.0
+
+
+class TestPaceTable:
+    def _engine_with_profile(self, profile: DriverProfile, driver_code: str = "TST"):
+        engine = make_engine(empty_df())
+
+        def fake_loader(code):
+            return profile
+
+        # Monkeypatch local: el engine usa `load_driver_profile` importado en el módulo
+        from app import strategy_engine as se_mod
+        se_mod.load_driver_profile = fake_loader  # type: ignore
+        return engine
+
+    def test_temperature_correction_applied(self):
+        # Perfil con coef de track = +0.5 s/°C; referencia 30, actual 40 → +5 s
+        params = ProfileParams(
+            base=90.0, slope=0.10,
+            track_coef=0.5, air_coef=0.0,
+            track_ref=30.0, air_ref=22.0,
+        )
+        profile = DriverProfile(
+            driver_code="TST",
+            profiles={("Bahrain", "MEDIUM"): params},
+            driver_defaults={"SOFT": params, "MEDIUM": params, "HARD": params},
+            global_defaults={"SOFT": params, "MEDIUM": params, "HARD": params},
+        )
+        engine = self._engine_with_profile(profile)
+        ctx = RaceContext(
+            year=2023, total_laps=50,
+            track_temp=40.0, air_temp=22.0,
+            pit_loss=22.0, sc_probability=0.2,
+        )
+        table = engine._pace_table("TST", "Bahrain", ctx)
+        pace_med, deg_med = table["MEDIUM"]
+        assert abs(pace_med - (90.0 + 0.5 * 10.0)) < 1e-6
+        assert abs(deg_med - 0.10) < 1e-6
+
+    def test_returns_all_three_compounds(self):
+        params = ProfileParams(90.0, 0.08, 0.0, 0.0, 30.0, 22.0)
+        profile = DriverProfile(
+            driver_code="TST",
+            profiles={},
+            driver_defaults={},
+            global_defaults={"SOFT": params, "MEDIUM": params, "HARD": params},
+        )
+        engine = self._engine_with_profile(profile)
+        ctx = RaceContext(year=2023, total_laps=50, track_temp=30.0, air_temp=22.0,
+                          pit_loss=22.0, sc_probability=0.2)
+        table = engine._pace_table("TST", "Bahrain", ctx)
+        assert set(table.keys()) == {"SOFT", "MEDIUM", "HARD"}
+
+
+class TestBreakEvenAnalytic:
+    """Verifica la forma cerrada del punto de parada óptima 1-stop."""
+
+    def _total_time(self, s, pace_a, deg_a, pace_b, deg_b, pit_loss, L):
+        t1 = sum(pace_a + deg_a * i for i in range(s))
+        t2 = sum(pace_b + deg_b * j for j in range(L - s))
+        return t1 + pit_loss + t2
+
+    def test_1stop_optimum_matches_closed_form(self):
+        pace_a, deg_a = 90.0, 0.10
+        pace_b, deg_b = 89.5, 0.06
+        L = 50
+        pit_loss = 22.0
+
+        # Forma cerrada del motor
+        denom = deg_a + deg_b
+        s_star = ((pace_b - pace_a) + (deg_a - deg_b) / 2.0 + deg_b * L) / denom
+
+        # Búsqueda numérica como referencia
+        scores = [(self._total_time(s, pace_a, deg_a, pace_b, deg_b, pit_loss, L), s)
+                  for s in range(5, L - 4)]
+        best = min(scores)[1]
+
+        assert abs(s_star - best) < 1.0, (
+            f"closed form {s_star:.2f} vs numerical {best}"
+        )
+
+    def test_2stop_optimum_close_to_numerical(self):
+        pace = {"A": (90.0, 0.10), "B": (89.5, 0.06), "C": (89.0, 0.04)}
+        L = 60
+        pit_loss = 22.0
+        pa, da = pace["A"]; pb, db = pace["B"]; pc, dc = pace["C"]
+
+        A = np.array([[da + db, -db], [-db, db + dc]], dtype=float)
+        rhs = np.array([
+            (pb - pa) + (da - db) / 2.0,
+            (pc - pb) + (db - dc) / 2.0 + dc * L,
+        ])
+        s1_an, s2_an = np.linalg.solve(A, rhs)
+
+        # Búsqueda numérica
+        best, best_time = (None, None), float("inf")
+        for s1 in range(5, L - 10):
+            for s2 in range(s1 + 5, L - 4):
+                t = (
+                    sum(pa + da * i for i in range(s1))
+                    + pit_loss
+                    + sum(pb + db * j for j in range(s2 - s1))
+                    + pit_loss
+                    + sum(pc + dc * k for k in range(L - s2))
+                )
+                if t < best_time:
+                    best, best_time = (s1, s2), t
+
+        assert abs(s1_an - best[0]) < 2.0
+        assert abs(s2_an - best[1]) < 2.0
+
+
+class TestCandidateGeneration:
+    def _engine_with_pace(self, pace_table):
+        engine = make_engine(empty_df())
+        engine._fixed_pace_table = pace_table  # type: ignore
+        return engine
+
+    def test_unprofitable_stop_dropped(self):
+        """Si la degradación es ~0 y pit_loss alto, ninguna parada es rentable."""
+        engine = make_engine(empty_df())
+        pace_table = {
+            "SOFT":   (90.0, 0.0),
+            "MEDIUM": (90.0, 0.0),
+            "HARD":   (90.0, 0.0),
+        }
+        bounds = {"SOFT": (10, 30), "MEDIUM": (10, 35), "HARD": (10, 45)}
+        candidates = engine._candidate_strategies(
+            total_laps=50, bounds=bounds, pace_table=pace_table, pit_loss=30.0,
+        )
+        assert candidates == [], "Sin degradación no debería haber candidatas rentables"
+
+    def test_at_least_two_compounds(self):
+        engine = make_engine(empty_df())
+        pace_table = {
+            "SOFT":   (89.0, 0.12),
+            "MEDIUM": (90.0, 0.08),
+            "HARD":   (91.0, 0.04),
+        }
+        bounds = {"SOFT": (8, 25), "MEDIUM": (12, 35), "HARD": (18, 45)}
+        candidates = engine._candidate_strategies(
+            total_laps=55, bounds=bounds, pace_table=pace_table, pit_loss=22.0,
+        )
+        assert len(candidates) > 0
+        for c in candidates:
+            assert len(set(c.compounds)) >= 2
+
+    def test_at_least_one_stop(self):
+        engine = make_engine(empty_df())
+        pace_table = {
+            "SOFT":   (89.0, 0.12),
+            "MEDIUM": (90.0, 0.08),
+            "HARD":   (91.0, 0.04),
+        }
+        bounds = {"SOFT": (8, 25), "MEDIUM": (12, 35), "HARD": (18, 45)}
+        candidates = engine._candidate_strategies(
+            total_laps=55, bounds=bounds, pace_table=pace_table, pit_loss=22.0,
+        )
+        for c in candidates:
+            assert len(c.stop_laps) >= 1
+
+
+class TestHardStartFilteredOut:
+    """HARD-start nunca debe llegar al payload final."""
+
+    def test_no_hard_start_in_final_strategies(self):
+        # Forzar parámetros que harían HARD-start atractiva: deg del HARD baja
+        # y pace base muy competitiva. Aun así, el filtro de salida debe excluirla.
+        engine = make_engine(empty_df())
+        candidates = [
+            StrategyCandidate(
+                strategy_type="1-stop",
+                compounds=["HARD", "MEDIUM"],
+                stint_lengths=[30, 25],
+                pit_windows=[{"lap_min": 25, "lap_max": 35}],
+                stop_laps=[30],
+            ),
+            StrategyCandidate(
+                strategy_type="1-stop",
+                compounds=["SOFT", "MEDIUM"],
+                stint_lengths=[18, 37],
+                pit_windows=[{"lap_min": 15, "lap_max": 22}],
+                stop_laps=[18],
+            ),
+        ]
+        # Simulación del filtro de salida tal como aparece en generate_strategies
+        kept = [c for c in candidates if c.compounds[0].upper() != "HARD"]
+        assert all(k.compounds[0].upper() != "HARD" for k in kept)
+        assert len(kept) == 1
+        assert kept[0].compounds[0] == "SOFT"

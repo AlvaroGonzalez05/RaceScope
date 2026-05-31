@@ -5,6 +5,84 @@ Format: most recent entry first.
 
 ---
 
+## [0.5.0] — 2026-05-31
+
+### Changed — Rediseño analítico de la construcción de estrategias
+
+**Contexto.** El motor anterior enumeraba estrategias por combinatoria
+de compuestos y centraba cada parada en la mitad de la ventana viable.
+La rentabilidad real de cada parada (`_stop_profitability`) se
+calculaba **post-ranking**, sólo como campo del payload. El ranking
+agregaba con `mean + λ·var` pero no comprobaba que cada parada
+estuviera matemáticamente justificada.
+
+#### `app/strategy_engine.py`
+
+- **Nuevo `_pace_table(driver, circuit, context)`** — devuelve
+  `{compound: (pace_base, deg_rate)}` apoyándose en `DriverProfile`
+  (lineal con 4 niveles de fallback) y aplicando la corrección de
+  temperatura del contexto actual:
+  ```
+  pace_base = params.base + params.track_coef·ΔT_track + params.air_coef·ΔT_air
+  deg_rate  = max(params.slope, 0.0)
+  ```
+  Es la fuente única de pace/degradación para la fase de generación.
+
+- **`_candidate_strategies` reescrita** — la vuelta de parada óptima ya
+  no se centra en la ventana, se **resuelve analíticamente**:
+  - 1-stop A→B: forma cerrada
+    `s* = ((pace_B − pace_A) + (deg_A − deg_B)/2 + deg_B·L) / (deg_A + deg_B)`.
+  - 2-stop A→B→C: sistema lineal 2×2 en `(s1, s2)` resuelto con
+    `np.linalg.solve`.
+  - Filtros: `stint_length ≥ 5`, ≤ cota física del compuesto, ≥2
+    compuestos distintos, ≥1 parada (reglas F1).
+  - **Filtro de rentabilidad como filtro de generación**: si todas las
+    paradas tienen `profit_i = (t_old − t_fresh) − pit_loss < 0`, la
+    candidata se descarta antes del ranking. `_stop_profitability`
+    pasa de decorador del payload a guardián de la generación.
+
+- **Sesgos sobre primer compuesto suavizados**:
+  - `+50 s` HARD-start → eliminado del score.
+  - `+2 s` MEDIUM-start → bajado a `+1 s`.
+
+- **Filtro duro HARD-start a la salida**: cualquier estrategia con
+  `compounds[0] == "HARD"` se excluye del payload final. Decisión de
+  producto: en F1 moderna salir en duro es competitivamente irreal y
+  no debe mostrarse aunque la matemática lo permita.
+
+#### `app/config.py`
+
+- `PIT_LOSS_MIN`: 18.0 → **15.0**
+- `PIT_LOSS_MAX`: 35.0 → **45.0**
+
+Cotas alineadas con la observación de F1 moderna: una parada rara vez
+supera los 45 s y nunca baja de 15 s.
+
+#### `tests/test_strategy_engine.py`
+
+10 tests nuevos en cuatro grupos:
+
+- `TestPitLossClamp15_45`: verifica el nuevo rango `[15, 45]`.
+- `TestPaceTable`: `_pace_table` aplica la corrección de temperatura y
+  devuelve los 3 compuestos.
+- `TestBreakEvenAnalytic`: la forma cerrada de 1-stop y el sistema 2×2
+  de 2-stop coinciden con búsqueda numérica (tolerancia 1-2 vueltas).
+- `TestCandidateGeneration`: candidatas sin parada rentable se
+  descartan; toda candidata cumple ≥2 compuestos y ≥1 parada.
+- `TestHardStartFilteredOut`: el filtro duro de HARD-start funciona.
+
+#### `STRATEGY_CONSTRUCTION.md` (reescrito)
+
+Refleja el nuevo reparto de motores: `DriverProfile` lineal decide
+cuándo parar; Transformer v3 predice pace y refina Top-3 con MC;
+heurística `mean + λ·var` ordena.
+
+**Verificación:** 139/139 tests verdes. Smoke test VER/Sakhir/2023:
+5 estrategias devueltas, ninguna HARD-start, primera estrategia 1-stop
+MEDIUM→SOFT con stop@34/57.
+
+---
+
 ## [0.4.0] — 2026-05-25
 
 ### Added — Transformer v3 medium + stop profitability engine
