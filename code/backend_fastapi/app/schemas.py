@@ -4,9 +4,9 @@ from pydantic import BaseModel, ConfigDict
 
 class DriverOut(BaseModel):
     model_config = ConfigDict(extra="allow")
-    driver_id: int
-    driver_code: str | None = None
+    driver_code: str
     team_name: str | None = None
+    driver_id: int | None = None  # kept for reference, driver_code is the primary identifier
 
 
 class TeamOut(BaseModel):
@@ -44,6 +44,7 @@ class StrategyOut(BaseModel):
     expected_time: float
     variance: float
     risk_score: float
+    stop_profitability: list[float] = []
 
 
 class ContextOut(BaseModel):

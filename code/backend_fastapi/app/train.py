@@ -25,6 +25,15 @@ from .config import (
     TRANSFORMER_V2_N_LAYERS,
     TRANSFORMER_V2_AUX_LOSS_W,
     TRANSFORMER_V2_DEG_LOSS_W,
+    TRANSFORMER_V3_CONTEXT_LAPS,
+    TRANSFORMER_V3_D_MODEL,
+    TRANSFORMER_V3_DIM_FF,
+    TRANSFORMER_V3_DROPOUT,
+    TRANSFORMER_V3_INPUT_DIM,
+    TRANSFORMER_V3_N_HEADS,
+    TRANSFORMER_V3_N_LAYERS,
+    TRANSFORMER_V3_AUX_LOSS_W,
+    TRANSFORMER_V3_DEG_LOSS_W,
 )
 from .models_transformer import (
     PracticeDistribution,
@@ -40,7 +49,7 @@ _PRACTICE_SESSION_TYPES = {"FP1", "FP2", "FP3"}
 _EXCLUDE_LAP_TYPES = {"sc", "formation", "outlier"}
 
 # Drivers that get priority training (most requested by the strategy API)
-_PRIORITY_DRIVERS = {55, 16}
+_PRIORITY_DRIVERS = {"SAI", "LEC"}
 
 
 # ---------------------------------------------------------------------------
@@ -283,12 +292,28 @@ def train_per_driver(
                       2025+ data is never loaded here (held out for evaluation).
     driver_ids      : if given, only train these drivers (plus global).
     min_laps        : minimum clean "normal" laps for a driver to get their own model.
-    epochs          : maximum training epochs (early stopping may stop earlier).
-    model_version   : "v2" (default) or "v1" (backward compat).
+    epochs          : maximum training epochs (early stopping may stop earlier for v2/v3).
+    model_version   : "v3" (large, d_model=768), "v2" (default, d_model=256), "v1" (compat).
     val_frac        : fraction of sessions held out as validation for early stopping.
     patience        : early stopping patience in epochs (0 = disabled).
     hparam_overrides: dict of hyperparameter overrides loaded from hparam_search output.
     """
+    # Apply v3 defaults when model_version is "v3" and params were not overridden by caller
+    if model_version == "v3":
+        if context_len == TRANSFORMER_V2_CONTEXT_LAPS:
+            context_len = TRANSFORMER_V3_CONTEXT_LAPS
+        if d_model == TRANSFORMER_V2_D_MODEL:
+            d_model = TRANSFORMER_V3_D_MODEL
+        if n_heads == TRANSFORMER_V2_N_HEADS:
+            n_heads = TRANSFORMER_V3_N_HEADS
+        if n_layers == TRANSFORMER_V2_N_LAYERS:
+            n_layers = TRANSFORMER_V3_N_LAYERS
+        if dim_ff == TRANSFORMER_V2_DIM_FF:
+            dim_ff = TRANSFORMER_V3_DIM_FF
+        if dropout == TRANSFORMER_V2_DROPOUT:
+            dropout = TRANSFORMER_V3_DROPOUT
+        if epochs == 15:
+            epochs = 30
     # Apply hyperparameter overrides if provided
     if hparam_overrides:
         context_len = hparam_overrides.get("context_len", context_len)
@@ -315,13 +340,21 @@ def train_per_driver(
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Build id→code mapping from the clean dataset
+    _id_to_code: Dict[int, str] = {}
+    if "driver_code" in df_clean.columns:
+        for did, grp in df_clean.groupby("driver_id"):
+            codes = grp["driver_code"].dropna().unique()
+            if len(codes) > 0:
+                _id_to_code[int(did)] = str(codes[0])
+
     # Determine which driver IDs to train
     all_driver_ids = sorted(df_clean["driver_id"].dropna().unique().astype(int).tolist())
     target_ids     = [int(d) for d in driver_ids] if driver_ids is not None else all_driver_ids
 
     target_ids_ordered = sorted(
         target_ids,
-        key=lambda d: (0 if d in _PRIORITY_DRIVERS else 1, d),
+        key=lambda d: (0 if _id_to_code.get(d, "") in _PRIORITY_DRIVERS else 1, d),
     )
 
     # Fit practice distributions from the full clean dataset
@@ -336,30 +369,36 @@ def train_per_driver(
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Effective input_dim for payload
-    input_dim = TRANSFORMER_V2_INPUT_DIM if model_version == "v2" else TRANSFORMER_INPUT_DIM
+    if model_version == "v3":
+        input_dim = TRANSFORMER_V3_INPUT_DIM
+    elif model_version == "v2":
+        input_dim = TRANSFORMER_V2_INPUT_DIM
+    else:
+        input_dim = TRANSFORMER_INPUT_DIM
 
-    trained: Dict[int, Path] = {}
+    trained: Dict[str, Path] = {}
 
     for driver_id in target_ids_ordered:
+        driver_code = _id_to_code.get(int(driver_id), str(driver_id))
         df_driver = df_clean[df_clean["driver_id"] == driver_id]
         n_normal  = int((df_driver["lap_type"] == "normal").sum())
 
         if n_normal < min_laps:
             logger.info(
                 "driver_id=%s skip (only %d normal laps < min_laps=%d)",
-                driver_id, n_normal, min_laps,
+                driver_code, n_normal, min_laps,
             )
             continue
 
         # Validation split (only for v2 with early stopping)
-        train_df, val_df = _split_val(df_driver, val_frac=val_frac) if model_version == "v2" else (df_driver, None)
+        train_df, val_df = _split_val(df_driver, val_frac=val_frac) if model_version in ("v2", "v3") else (df_driver, None)
         if train_df.empty:
-            logger.warning("driver_id=%s: empty train split, skipping", driver_id)
+            logger.warning("driver_id=%s: empty train split, skipping", driver_code)
             continue
 
         logger.info(
             "driver_id=%s training  normal_laps=%d  context=%d  d_model=%d  layers=%d  epochs=%d  version=%s",
-            driver_id, n_normal, context_len, d_model, n_layers, epochs, model_version,
+            driver_code, n_normal, context_len, d_model, n_layers, epochs, model_version,
         )
 
         model = TransformerPaceModel(
@@ -373,7 +412,7 @@ def train_per_driver(
         )
 
         ts          = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_path    = str(log_dir / f"driver_{driver_id}_{ts}.csv")
+        csv_path    = str(log_dir / f"driver_{driver_code}_{ts}.csv")
 
         try:
             bundle = model.train(
@@ -385,7 +424,7 @@ def train_per_driver(
                 log_csv_path=csv_path,
             )
         except ValueError as exc:
-            logger.warning("driver_id=%s training failed: %s", driver_id, exc)
+            logger.warning("driver_id=%s training failed: %s", driver_code, exc)
             continue
 
         # Driver-specific practice distributions
@@ -401,20 +440,20 @@ def train_per_driver(
             "bundle":      bundle,
             "input_dim":   input_dim,
             "context_len": context_len,
-            "model_type":  f"transformer_{model_version}" if model_version == "v2" else "transformer",
+            "model_type":  f"transformer_{model_version}" if model_version in ("v2", "v3") else "transformer",
             "model_kwargs": {
                 "d_model": d_model, "n_heads": n_heads, "n_layers": n_layers,
                 "dim_ff": dim_ff, "dropout": dropout,
             },
             "practice_dist": driver_practice,
         }
-        path = MODELS_DIR / f"driver_{int(driver_id)}.joblib"
+        path = MODELS_DIR / f"driver_{driver_code}.joblib"
         _joblib_dump(payload, path)
-        trained[int(driver_id)] = path
-        logger.info("driver_id=%s saved → %s", driver_id, path)
+        trained[driver_code] = path
+        logger.info("driver_id=%s saved → %s", driver_code, path)
 
     # --- Global fallback model (all clean data) ---
-    train_all, val_all = _split_val(df_clean, val_frac=val_frac) if model_version == "v2" else (df_clean, None)
+    train_all, val_all = _split_val(df_clean, val_frac=val_frac) if model_version in ("v2", "v3") else (df_clean, None)
     logger.info(
         "global model: normal_laps=%d  context=%d  d_model=%d  layers=%d  version=%s",
         int((df_clean["lap_type"] == "normal").sum()), context_len, d_model, n_layers, model_version,
@@ -426,10 +465,10 @@ def train_per_driver(
     ts_g = datetime.now().strftime("%Y%m%d_%H%M%S")
     try:
         global_bundle = global_model.train(
-            train_all if model_version == "v2" else df_clean,
+            train_all if model_version in ("v2", "v3") else df_clean,
             epochs=epochs,
             batch_size=batch_size,
-            val_df=val_all if (model_version == "v2" and not val_all.empty) else None,
+            val_df=val_all if (model_version in ("v2", "v3") and not val_all.empty) else None,
             patience=patience,
             log_csv_path=str(log_dir / f"global_{ts_g}.csv"),
         )
@@ -437,7 +476,7 @@ def train_per_driver(
             "bundle":      global_bundle,
             "input_dim":   input_dim,
             "context_len": context_len,
-            "model_type":  f"transformer_{model_version}" if model_version == "v2" else "transformer",
+            "model_type":  f"transformer_{model_version}" if model_version in ("v2", "v3") else "transformer",
             "model_kwargs": {
                 "d_model": d_model, "n_heads": n_heads, "n_layers": n_layers,
                 "dim_ff": dim_ff, "dropout": dropout,

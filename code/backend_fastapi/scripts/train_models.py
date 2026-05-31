@@ -95,7 +95,7 @@ def main() -> None:
         "--model-version",
         type=str,
         default="v2",
-        choices=["v1", "v2"],
+        choices=["v1", "v2", "v3"],
         help="Transformer architecture version (default: v2).",
     )
     parser.add_argument(

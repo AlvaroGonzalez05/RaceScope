@@ -162,3 +162,4 @@ class TestContextUsesHelpers:
         ctx = engine._context(2023, "TestCircuit")
         assert ctx.pit_loss >= PIT_LOSS_MIN
         assert SC_PROBABILITY_MIN <= ctx.sc_probability <= SC_PROBABILITY_MAX
+

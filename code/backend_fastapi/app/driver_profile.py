@@ -24,7 +24,7 @@ class ProfileParams:
 
 @dataclass
 class DriverProfile:
-    driver_id: int
+    driver_code: str
     profiles: Dict[Tuple[str, str], ProfileParams]
     driver_defaults: Dict[str, ProfileParams]
     global_defaults: Dict[str, ProfileParams]
@@ -76,16 +76,17 @@ def _build_global_defaults(df: pd.DataFrame) -> Dict[str, ProfileParams]:
     return defaults
 
 
-def train_driver_profiles(df: pd.DataFrame, min_laps: int = 120) -> Dict[int, Path]:
+def train_driver_profiles(df: pd.DataFrame, min_laps: int = 120) -> Dict[str, Path]:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     trained = {}
 
     global_defaults = _build_global_defaults(df)
     joblib.dump(global_defaults, MODELS_DIR / "driver_profile_global.joblib")
 
-    for driver_id, df_driver in df.groupby("driver_id"):
+    for (driver_id, driver_code), df_driver in df.groupby(["driver_id", "driver_code"]):
         if len(df_driver) < min_laps:
             continue
+        driver_code = str(driver_code)
 
         profiles = {}
         driver_defaults = {}
@@ -109,23 +110,27 @@ def train_driver_profiles(df: pd.DataFrame, min_laps: int = 120) -> Dict[int, Pa
             profiles[(str(circuit_id), compound_key)] = _fit_params(cdf)
 
         profile = DriverProfile(
-            driver_id=int(driver_id),
+            driver_code=driver_code,
             profiles=profiles,
             driver_defaults=driver_defaults,
             global_defaults=global_defaults,
         )
-        path = MODELS_DIR / f"driver_profile_{int(driver_id)}.joblib"
+        path = MODELS_DIR / f"driver_profile_{driver_code}.joblib"
         joblib.dump(profile, path)
-        trained[int(driver_id)] = path
+        trained[driver_code] = path
 
     return trained
 
 
 @lru_cache(maxsize=64)
-def load_driver_profile(driver_id: int) -> DriverProfile:
-    profile_path = MODELS_DIR / f"driver_profile_{int(driver_id)}.joblib"
+def load_driver_profile(driver_code: str) -> DriverProfile:
+    profile_path = MODELS_DIR / f"driver_profile_{driver_code}.joblib"
     if profile_path.exists():
-        return joblib.load(profile_path)
+        profile = joblib.load(profile_path)
+        # Backward-compat: profiles saved before the driver_code refactor used driver_id.
+        if not hasattr(profile, "driver_code"):
+            profile.__dict__["driver_code"] = driver_code
+        return profile
 
     global_path = MODELS_DIR / "driver_profile_global.joblib"
     if global_path.exists():
@@ -133,7 +138,7 @@ def load_driver_profile(driver_id: int) -> DriverProfile:
     else:
         global_defaults = {"SOFT": ProfileParams(90.0, 0.05, 0.0, 0.0, 30.0, 22.0)}
     return DriverProfile(
-        driver_id=int(driver_id),
+        driver_code=driver_code,
         profiles={},
         driver_defaults={},
         global_defaults=global_defaults,

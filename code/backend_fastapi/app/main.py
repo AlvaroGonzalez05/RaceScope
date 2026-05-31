@@ -5,6 +5,7 @@ import secrets
 import time
 import uuid
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -79,7 +80,40 @@ def rate_limit(request: Request) -> None:
     _rate_limit_store[client_ip].append(now)
 
 
-app = FastAPI(title="Race Strategy MVP", version="0.2.0")
+def _preload_models_sync() -> None:
+    """Pre-warm the LRU model cache at startup to eliminate cold-start latency."""
+    from .strategy_engine import _load_model_cached  # noqa: PLC0415
+
+    try:
+        _load_model_cached("__fallback__")  # triggers global.joblib load
+        logger.info("startup: global model pre-loaded")
+    except Exception as exc:
+        logger.warning("startup: model pre-load skipped (%s)", exc)
+
+    try:
+        from .data_store import load_features  # noqa: PLC0415
+        df = load_features()
+        if not df.empty:
+            driver_codes = df["driver_code"].dropna().unique().tolist()
+            for code in driver_codes[:16]:
+                try:
+                    _load_model_cached(str(code))
+                except Exception:
+                    pass
+            logger.info("startup: pre-loaded models for %d drivers", min(len(driver_codes), 16))
+    except Exception as exc:
+        logger.warning("startup: per-driver pre-load skipped (%s)", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _preload_models_sync)
+    yield
+
+
+app = FastAPI(title="Race Strategy MVP", version="0.2.0", lifespan=lifespan)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -125,7 +159,7 @@ def _resolve_data_mode() -> Dict[str, object]:
 class StrategyRequest(BaseModel):
     year: int
     circuit_id: str = Field(..., description="Circuit short name")
-    driver_id: int
+    driver_code: str = Field(..., description="3-letter driver code (e.g. VER, HAM, ALO)")
     risk_bias: float = DEFAULT_RISK_LAMBDA
     n_strategies: int = DEFAULT_STRATEGY_COUNT
     debug_profile: bool = False
@@ -135,8 +169,8 @@ class StrategyRequest(BaseModel):
 class CompareRequest(BaseModel):
     year: int
     circuit_id: str
-    driver_id: int
-    teammate_id: int
+    driver_code: str = Field(..., description="3-letter driver code")
+    teammate_code: str = Field(..., description="3-letter teammate code")
     risk_bias: float = DEFAULT_RISK_LAMBDA
     n_strategies: int = DEFAULT_STRATEGY_COUNT
     debug_profile: bool = False
@@ -199,7 +233,7 @@ def _get_teams(season: int) -> List[str]:
 
 
 def _post_strategy(req: StrategyRequest) -> Dict:
-    cache_key = f"strategy:{req.year}:{req.circuit_id}:{req.driver_id}:{req.risk_bias}:{req.n_strategies}"
+    cache_key = f"strategy:{req.year}:{req.circuit_id}:{req.driver_code}:{req.risk_bias}:{req.n_strategies}"
     if not req.force_recompute:
         cached = _cache_get(cache_key)
         if cached:
@@ -226,7 +260,7 @@ def _post_strategy(req: StrategyRequest) -> Dict:
     payload = engine.generate_strategies(
         year=req.year,
         circuit_id=req.circuit_id,
-        driver_id=req.driver_id,
+        driver_code=req.driver_code,
         risk_bias=req.risk_bias,
         n_strategies=req.n_strategies,
         debug_profile=req.debug_profile,
@@ -235,7 +269,7 @@ def _post_strategy(req: StrategyRequest) -> Dict:
     response = {
         "year": req.year,
         "circuit_id": req.circuit_id,
-        "driver_id": req.driver_id,
+        "driver_code": req.driver_code,
         **payload,
         "compute_meta": {
             "cache_hit": False,
@@ -250,7 +284,7 @@ def _post_strategy(req: StrategyRequest) -> Dict:
 
 
 def _post_compare(req: CompareRequest) -> Dict:
-    cache_key = f"compare:{req.year}:{req.circuit_id}:{req.driver_id}:{req.teammate_id}:{req.risk_bias}:{req.n_strategies}"
+    cache_key = f"compare:{req.year}:{req.circuit_id}:{req.driver_code}:{req.teammate_code}:{req.risk_bias}:{req.n_strategies}"
     if not req.force_recompute:
         cached = _cache_get(cache_key)
         if cached:
@@ -277,27 +311,27 @@ def _post_compare(req: CompareRequest) -> Dict:
     driver_payload = engine.generate_strategies(
         year=req.year,
         circuit_id=req.circuit_id,
-        driver_id=req.driver_id,
+        driver_code=req.driver_code,
         risk_bias=req.risk_bias,
         n_strategies=req.n_strategies,
-        opponent_id=req.teammate_id,
+        opponent_code=req.teammate_code,
         debug_profile=req.debug_profile,
     )
     teammate_payload = engine.generate_strategies(
         year=req.year,
         circuit_id=req.circuit_id,
-        driver_id=req.teammate_id,
+        driver_code=req.teammate_code,
         risk_bias=req.risk_bias,
         n_strategies=req.n_strategies,
-        opponent_id=req.driver_id,
+        opponent_code=req.driver_code,
         debug_profile=req.debug_profile,
     )
 
     response = {
         "year": req.year,
         "circuit_id": req.circuit_id,
-        "driver": {"driver_id": req.driver_id, **driver_payload},
-        "teammate": {"driver_id": req.teammate_id, **teammate_payload},
+        "driver": {"driver_code": req.driver_code, **driver_payload},
+        "teammate": {"driver_code": req.teammate_code, **teammate_payload},
         "compute_meta": {
             "cache_hit": False,
             "mc_executed": bool(driver_payload.get("strategies") or teammate_payload.get("strategies")),

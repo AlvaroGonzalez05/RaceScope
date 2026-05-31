@@ -147,7 +147,7 @@ class TestPublicRoutes:
         _rate_limit_store.clear()  # reset after rate limit test
         with patch("app.main.load_features", return_value=__import__("pandas").DataFrame()):
             response = client.post("/api/strategy", json={
-                "year": 2023, "circuit_id": "Sakhir", "driver_id": 14,
+                "year": 2023, "circuit_id": "Sakhir", "driver_code": "VER",
             })
         assert response.status_code == 400
 

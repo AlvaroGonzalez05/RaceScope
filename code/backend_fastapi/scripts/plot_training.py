@@ -150,8 +150,7 @@ def plot_driver_grid(
     out_path: Path,
 ) -> None:
     driver_keys = sorted(
-        [k for k in logs if k.startswith("driver_")],
-        key=lambda k: int(k.split("_")[1]),
+        [k for k in logs if k.startswith("driver_") and not k.split("_")[1].isdigit()],
     )
     n = len(driver_keys)
     ncols = 5
@@ -220,7 +219,7 @@ def plot_final_val_mae_bar(
     for key, df in logs.items():
         if not key.startswith("driver_") and key != "global":
             continue
-        label    = key.replace("driver_", "D") if key != "global" else "GLOBAL"
+        label    = key.replace("driver_", "") if key != "global" else "GLOBAL"
         valid    = df["val_mae"].dropna()
         if valid.empty:
             continue
@@ -421,7 +420,10 @@ def main() -> None:
     if "global" in logs:
         plot_global_curves(logs["global"], out_dir / "global_curves.png")
 
-    driver_logs = {k: v for k, v in logs.items() if k.startswith("driver_")}
+    driver_logs = {
+        k: v for k, v in logs.items()
+        if k.startswith("driver_") and not k.split("_")[1].isdigit()
+    }
     if driver_logs:
         plot_driver_grid(driver_logs,                out_dir / "driver_grid.png")
         plot_final_val_mae_bar(logs,                 out_dir / "final_val_mae_bar.png")

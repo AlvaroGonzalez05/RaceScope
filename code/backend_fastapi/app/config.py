@@ -115,7 +115,20 @@ TRANSFORMER_V2_CONTEXT_LAPS = 25
 TRANSFORMER_V2_INPUT_DIM    = 14   # 14 continuous features (see models_transformer.py)
 TRANSFORMER_V2_AUX_LOSS_W   = 0.15  # weight of absolute-time auxiliary head
 TRANSFORMER_V2_DEG_LOSS_W   = 0.10  # weight of degradation-rate auxiliary head
-TRANSFORMER_V2_N_SIM        = 500   # MC simulations per strategy candidate
+TRANSFORMER_V2_N_SIM        = 100   # MC simulations per strategy candidate
+
+# --- Transformer v3 hyperparameters (medium — ~14M params) ---
+TRANSFORMER_V3_D_MODEL      = 384   # 1.5× v2; head_dim=48 (384/8)
+TRANSFORMER_V3_N_HEADS      = 8     # mismo que v2; head_dim=48
+TRANSFORMER_V3_N_LAYERS     = 8     # 1.33× v2; profundidad razonable
+TRANSFORMER_V3_DIM_FF       = 1536  # ratio FF/d_model=4 estándar
+TRANSFORMER_V3_DROPOUT      = 0.0   # overfitting intencional (un modelo por piloto)
+TRANSFORMER_V3_CONTEXT_LAPS = 40    # +15 vs v2; captura casi un stint completo
+TRANSFORMER_V3_INPUT_DIM    = 15    # +1 vs v2: stint_number_norm
+TRANSFORMER_V3_AUX_LOSS_W   = 0.10  # peso head tiempo absoluto
+TRANSFORMER_V3_DEG_LOSS_W   = 0.25  # peso head degradación (objetivo primario)
+TRANSFORMER_V3_VALUE_LOSS_W = 0.20  # peso head coste acumulado restante (nuevo)
+TRANSFORMER_V3_N_SIM        = 100   # MC simulations per strategy candidate
 
 # Lap types used as prediction targets vs allowed in context window
 TRAINING_LAP_TYPES: frozenset = frozenset({"normal"})
@@ -148,7 +161,7 @@ PIT_WINDOW_BIN = 5
 CACHE_TTL_SECONDS = 24 * 3600
 
 RANDOM_SEED = 42
-MC_TOP_K = 5
+MC_TOP_K = 3
 PACE_CURVE_CACHE_DIR = CACHE_DIR / "pace_curves"
 
 # Strategy engine fallbacks

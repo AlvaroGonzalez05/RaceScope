@@ -178,8 +178,8 @@ class TestSchemas:
     def test_driver_out_optional_fields(self):
         from app.schemas import DriverOut
 
-        driver = DriverOut(driver_id=14)
-        assert driver.driver_code is None
+        driver = DriverOut(driver_code="VER", driver_id=14)
+        assert driver.driver_code == "VER"
         assert driver.team_name is None
 
     def test_driver_out_extra_allowed(self):
@@ -384,7 +384,7 @@ class TestLegacyRouteDeprecation:
                 json={
                     "year": 2023,
                     "circuit_id": "Sakhir",
-                    "driver_id": 14,
+                    "driver_code": "VER",
                 },
             )
         assert any(

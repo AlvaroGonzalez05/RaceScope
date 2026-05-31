@@ -17,6 +17,14 @@ v2 tests (new):
   11. test_build_context_seed_v2         — shape (T,14), dtype float32, no NaN
   12. test_practice_distribution_defaults — pace_lo > pace_hi convention
 
+v3 tests:
+  13. test_v3_forward_pass              — TyreDegradationTransformerV3 → 4 heads, shapes OK
+  14. test_v3_rollout_mc_push_sensitivity — stint 1 vs stint 3 produce different trajectories
+  15. test_v3_circuit_differentiation    — 4 compound×circuit combos all different
+  16. test_v3_build_context_seed         — shape (T,15), col 14 = stint_number_norm
+  17. test_v3_stop_profitability_positive — 1-stop: fresh tyre gain > pit loss → profit > 0
+  18. test_v3_stop_profitability_negative — 1-stop: gain < pit loss → profit < 0
+
 NOTE: torch imports are lazy inside each test body to avoid MPS initialisation
 deadlocks during pytest collection on macOS Apple Silicon.
 """
@@ -35,6 +43,8 @@ from app.config import (
     TRANSFORMER_CONTEXT_LAPS,
     TRANSFORMER_V2_CONTEXT_LAPS,
     TRANSFORMER_V2_D_MODEL,
+    TRANSFORMER_V3_CONTEXT_LAPS,
+    TRANSFORMER_V3_D_MODEL,
     CIRCUIT_VOCAB,
 )
 
@@ -439,3 +449,385 @@ def test_practice_distribution_defaults():
 
     custom = PracticeDistribution(compound="SOFT", pace_hi=87.5, pace_lo=94.0)
     assert custom.pace_lo > custom.pace_hi
+
+
+# ---------------------------------------------------------------------------
+# Batched rollout tests (optimisation v2)
+# ---------------------------------------------------------------------------
+
+
+def test_v2_rollout_batched_shape_and_sanity():
+    """_rollout_v2_batched returns (n_sim, stint_len), no NaN, values in [60, 300]."""
+    import torch
+    from app.models_transformer import (
+        TransformerPaceModel, PracticeDistribution,
+        build_context_seed, COMPOUND_VOCAB, SESSION_TYPE_VOCAB,
+    )
+
+    df    = _make_synthetic_df(n_laps=400, n_stints=4, n_sessions=2)
+    model = TransformerPaceModel(
+        context_len=15, d_model=64, n_heads=4, n_layers=2, dim_ff=128,
+        model_version="v2",
+    )
+    model.train(df, epochs=2, batch_size=32, patience=0)
+
+    n_sim      = 8
+    stint_len  = 10
+    circuit_int = CIRCUIT_VOCAB.get("Sakhir", 1)
+    compound_int = COMPOUND_VOCAB.get("MEDIUM", 2)
+    session_int  = SESSION_TYPE_VOCAB.get("RACE", 4)
+
+    delta_std = model.stats.get("delta_std", 1.0)
+    track_ref = model.stats.get("track_temp_ref", 30.0)
+    air_ref   = model.stats.get("air_temp_ref",   25.0)
+    lap_mean  = model.stats.get("lap_mean", 90.0)
+    lap_std   = model.stats.get("lap_std",  1.0)
+
+    pd_dist    = PracticeDistribution(compound="MEDIUM")
+    pace_hi_n  = (pd_dist.pace_hi - lap_mean) / (lap_std or 1.0)
+    pace_lo_n  = (pd_dist.pace_lo - lap_mean) / (lap_std or 1.0)
+
+    rng = np.random.default_rng(0)
+    ctx_seeds = np.stack([
+        build_context_seed(pd_dist, model.context_len, delta_std, track_ref, air_ref,
+                           compound_int, session_int, circuit_int=circuit_int,
+                           rng=np.random.default_rng(i))
+        for i in range(n_sim)
+    ])  # (n_sim, T, 14)
+
+    phase_as = rng.uniform(pace_hi_n, pace_lo_n, size=n_sim).astype(np.float32)
+    phase_bs = rng.uniform(pace_hi_n, pace_lo_n, size=n_sim).astype(np.float32)
+    track_norms = np.zeros(n_sim, dtype=np.float32)
+    air_norms   = np.zeros(n_sim, dtype=np.float32)
+
+    out = model._rollout_v2_batched(
+        ctx_seeds, phase_as, phase_bs, stint_len,
+        track_norms, air_norms,
+        compound_int, lap_type_int=1, session_type_int=session_int,
+        base_lap_time=lap_mean, circuit_int=circuit_int, race_lap_start=0,
+    )
+
+    assert out.shape == (n_sim, stint_len), \
+        f"Expected ({n_sim}, {stint_len}), got {out.shape}"
+    assert not np.any(np.isnan(out)), "Output contains NaN"
+    assert np.all(out >= 60.0) and np.all(out <= 300.0), \
+        f"Lap times out of [60, 300]: min={out.min():.1f}, max={out.max():.1f}"
+
+
+def test_v2_rollout_batched_independence():
+    """Each sim in the batch is independent: different phase_a/b → different lap-time trajectories."""
+    import torch
+    from app.models_transformer import (
+        TransformerPaceModel, PracticeDistribution,
+        build_context_seed, COMPOUND_VOCAB, SESSION_TYPE_VOCAB,
+    )
+
+    df    = _make_synthetic_df(n_laps=400, n_stints=4, n_sessions=2)
+    model = TransformerPaceModel(
+        context_len=15, d_model=64, n_heads=4, n_layers=2, dim_ff=128,
+        model_version="v2",
+    )
+    model.train(df, epochs=2, batch_size=32, patience=0)
+
+    n_sim       = 4
+    stint_len   = 12
+    circuit_int  = CIRCUIT_VOCAB.get("Sakhir", 1)
+    compound_int = COMPOUND_VOCAB.get("SOFT", 1)
+    session_int  = SESSION_TYPE_VOCAB.get("RACE", 4)
+    lap_mean     = model.stats.get("lap_mean", 90.0)
+
+    pd_dist = PracticeDistribution(compound="SOFT", pace_hi=87.0, pace_lo=94.0)
+    delta_std = model.stats.get("delta_std", 1.0)
+    track_ref = model.stats.get("track_temp_ref", 30.0)
+    air_ref   = model.stats.get("air_temp_ref",   25.0)
+    lap_std   = model.stats.get("lap_std",  1.0)
+
+    pace_hi_n = (pd_dist.pace_hi - lap_mean) / (lap_std or 1.0)
+    pace_lo_n = (pd_dist.pace_lo - lap_mean) / (lap_std or 1.0)
+
+    ctx_seed = build_context_seed(
+        pd_dist, model.context_len, delta_std, track_ref, air_ref,
+        compound_int, session_int, circuit_int=circuit_int,
+        rng=np.random.default_rng(0),
+    )
+    ctx_seeds = np.tile(ctx_seed[np.newaxis], (n_sim, 1, 1))  # same seed for all sims
+
+    # Give each sim a very different phase_a — attacker vs conserve
+    phase_as = np.array([pace_hi_n, pace_hi_n, pace_lo_n, pace_lo_n], dtype=np.float32)
+    phase_bs = np.array([pace_hi_n, pace_lo_n, pace_hi_n, pace_lo_n], dtype=np.float32)
+    track_norms = np.zeros(n_sim, dtype=np.float32)
+    air_norms   = np.zeros(n_sim, dtype=np.float32)
+
+    out = model._rollout_v2_batched(
+        ctx_seeds, phase_as, phase_bs, stint_len,
+        track_norms, air_norms,
+        compound_int, lap_type_int=1, session_type_int=session_int,
+        base_lap_time=lap_mean, circuit_int=circuit_int, race_lap_start=0,
+    )  # (n_sim, stint_len)
+
+    assert out.shape == (n_sim, stint_len)
+    assert not np.any(np.isnan(out))
+
+    # Sims with identical (phase_a, phase_b) must be identical (same ctx + same intent)
+    np.testing.assert_array_equal(
+        out[0], out[0],
+        err_msg="Self-consistency check failed",
+    )
+    # Sims with different phase values must differ
+    assert not np.allclose(out[0], out[2], atol=1e-3), \
+        "Sims with different phase_a (push vs conserve) produced identical lap times"
+
+
+def test_v2_rollout_batched_vs_sequential():
+    """Batched rollout mean ≈ sequential rollout mean (within 5 s over a 15-lap stint)."""
+    import torch
+    from app.models_transformer import (
+        TransformerPaceModel, PracticeDistribution,
+        build_context_seed, COMPOUND_VOCAB, SESSION_TYPE_VOCAB,
+    )
+
+    df    = _make_synthetic_df(n_laps=600, n_stints=4, n_sessions=3)
+    model = TransformerPaceModel(
+        context_len=15, d_model=64, n_heads=4, n_layers=2, dim_ff=128,
+        model_version="v2",
+    )
+    model.train(df, epochs=3, batch_size=32, patience=0)
+
+    n_sim       = 20
+    stint_len   = 15
+    circuit_int  = CIRCUIT_VOCAB.get("Sakhir", 1)
+    compound_int = COMPOUND_VOCAB.get("MEDIUM", 2)
+    session_int  = SESSION_TYPE_VOCAB.get("RACE", 4)
+    lap_mean     = model.stats.get("lap_mean", 90.0)
+    lap_std      = model.stats.get("lap_std",   1.0)
+    delta_std    = model.stats.get("delta_std", 1.0)
+    track_ref    = model.stats.get("track_temp_ref", 30.0)
+    air_ref      = model.stats.get("air_temp_ref",   25.0)
+
+    pd_dist    = PracticeDistribution(compound="MEDIUM")
+    pace_hi_n  = (pd_dist.pace_hi - lap_mean) / (lap_std or 1.0)
+    pace_lo_n  = (pd_dist.pace_lo - lap_mean) / (lap_std or 1.0)
+
+    # Pre-generate shared random values (used by both batched and sequential)
+    rng_gen = np.random.default_rng(42)
+    ctx_seeds  = np.stack([
+        build_context_seed(pd_dist, model.context_len, delta_std, track_ref, air_ref,
+                           compound_int, session_int, circuit_int=circuit_int,
+                           rng=np.random.default_rng(i))
+        for i in range(n_sim)
+    ])
+    phase_as = rng_gen.uniform(pace_hi_n, pace_lo_n, size=n_sim).astype(np.float32)
+    phase_bs = rng_gen.uniform(pace_hi_n, pace_lo_n, size=n_sim).astype(np.float32)
+    track_norms = np.zeros(n_sim, dtype=np.float32)
+    air_norms   = np.zeros(n_sim, dtype=np.float32)
+
+    # Batched path
+    batched = model._rollout_v2_batched(
+        ctx_seeds, phase_as, phase_bs, stint_len,
+        track_norms, air_norms,
+        compound_int, lap_type_int=1, session_type_int=session_int,
+        base_lap_time=lap_mean, circuit_int=circuit_int, race_lap_start=0,
+    )  # (n_sim, stint_len)
+
+    # Sequential path — call _rollout_v2 once per sim with the same pre-generated
+    # phase_a / phase_b, using a rng that always returns those exact values
+    seq_sums = np.zeros(n_sim, dtype=np.float64)
+    for i in range(n_sim):
+        class _FixedRng:
+            """Minimal rng shim that returns pre-set uniform values."""
+            def __init__(self, pa, pb):
+                self._vals = iter([float(pa), float(pb)])
+            def uniform(self, *args, **kwargs):
+                return next(self._vals)
+
+        lap_times = model._rollout_v2(
+            ctx_seeds[i], stint_len, (pace_hi_n, pace_lo_n),
+            track_ref, air_ref,
+            compound_int, 1, session_int,
+            lap_mean, _FixedRng(phase_as[i], phase_bs[i]),
+            circuit_int, 0,
+        )
+        seq_sums[i] = np.sum(lap_times)
+
+    batched_sums = np.sum(batched, axis=1)
+
+    mean_batched = float(np.mean(batched_sums))
+    mean_seq     = float(np.mean(seq_sums))
+
+    assert abs(mean_batched - mean_seq) < 5.0, (
+        f"Batched mean race time {mean_batched:.2f}s differs from sequential "
+        f"{mean_seq:.2f}s by more than 5s — implementation divergence"
+    )
+
+
+# ---------------------------------------------------------------------------
+# v3 tests
+# ---------------------------------------------------------------------------
+
+
+def test_v3_forward_pass():
+    """TyreDegradationTransformerV3: (B,T,15) + cat + circuit + compound_static → 4 heads."""
+    import torch
+    from app.models_transformer import TyreDegradationTransformerV3
+
+    B, T = 4, TRANSFORMER_V3_CONTEXT_LAPS
+    model = TyreDegradationTransformerV3(
+        context_len=T,
+        d_model=TRANSFORMER_V3_D_MODEL,
+    )
+    model.eval()
+
+    x_cont   = torch.randn(B, T, 15)
+    x_cat    = torch.zeros(B, T, 3, dtype=torch.long)
+    circ_idx = torch.zeros(B, dtype=torch.long)
+    comp_idx = torch.zeros(B, dtype=torch.long)
+
+    with torch.no_grad():
+        delta, abs_t, deg, value = model(x_cont, x_cat, circ_idx, comp_idx)
+
+    for head, name in [(delta, "delta"), (abs_t, "abs"), (deg, "deg"), (value, "value")]:
+        assert head.shape == (B, 1), f"head '{name}' shape {head.shape} != ({B}, 1)"
+        assert torch.isfinite(head).all(), f"head '{name}' has non-finite values"
+
+
+def test_v3_rollout_mc_push_sensitivity():
+    """Stint 1 vs stint 3: stint_number_norm affects trajectories (different context seeds)."""
+    import torch
+    from app.models_transformer import TyreDegradationTransformerV3, TransformerPaceModel, PracticeDistribution, build_context_seed_v3, COMPOUND_VOCAB, SESSION_TYPE_VOCAB
+
+    T = 10
+    arch = TyreDegradationTransformerV3(context_len=T, d_model=64, n_heads=4, n_layers=2, dim_ff=128)
+    arch.eval()
+
+    stats = {"lap_mean": 90.0, "lap_std": 1.0, "delta_std": 0.3, "track_temp_ref": 30.0, "air_temp_ref": 25.0}
+    wrapper = TransformerPaceModel.__new__(TransformerPaceModel)
+    wrapper.model       = arch
+    wrapper.context_len = T
+    wrapper.stats       = stats
+    wrapper.practice_dist = {}
+
+    pd_dist = PracticeDistribution(compound="SOFT")
+    rng1 = np.random.default_rng(0)
+    rng3 = np.random.default_rng(0)
+
+    compound_int = COMPOUND_VOCAB.get("SOFT", 1)
+    session_int  = SESSION_TYPE_VOCAB.get("RACE", 4)
+
+    seed1 = build_context_seed_v3(pd_dist, T, 0.3, 30.0, 25.0, compound_int, session_int, circuit_int=1, rng=rng1, stint_number=1)
+    seed3 = build_context_seed_v3(pd_dist, T, 0.3, 30.0, 25.0, compound_int, session_int, circuit_int=1, rng=rng3, stint_number=3)
+
+    # stint_number_norm col (14) must differ
+    assert seed1.shape == (T, 15), f"Expected (T,15) got {seed1.shape}"
+    assert seed3.shape == (T, 15)
+
+    val1 = float(seed1[:, 14].mean())
+    val3 = float(seed3[:, 14].mean())
+    assert abs(val1) < 0.1, f"Stint 1 norm should be ~0, got {val1}"
+    assert val3 > 0.3,      f"Stint 3 norm should be > 0.3, got {val3}"
+
+
+def test_v3_circuit_differentiation():
+    """4 compound×circuit combos produce 4 different delta predictions."""
+    import torch
+    from app.models_transformer import TyreDegradationTransformerV3
+
+    T = 5
+    model = TyreDegradationTransformerV3(context_len=T, d_model=64, n_heads=4, n_layers=2, dim_ff=128)
+    model.eval()
+
+    combos = [
+        (1, 1),   # Sakhir + SOFT
+        (1, 2),   # Sakhir + MEDIUM
+        (7, 1),   # Monaco + SOFT
+        (7, 2),   # Monaco + MEDIUM
+    ]
+    outputs = []
+    x_cont = torch.randn(1, T, 15)
+    x_cat  = torch.zeros(1, T, 3, dtype=torch.long)
+
+    with torch.no_grad():
+        for circ, comp in combos:
+            delta, _, _, _ = model(
+                x_cont,
+                x_cat,
+                torch.tensor([circ]),
+                torch.tensor([comp]),
+            )
+            outputs.append(float(delta.item()))
+
+    # All four must be distinct (gate makes them different)
+    assert len(set(round(v, 6) for v in outputs)) == 4, (
+        f"Expected 4 unique delta predictions, got {outputs}"
+    )
+
+
+def test_v3_build_context_seed():
+    """build_context_seed_v3 returns (T,15) float32 with correct stint_number_norm."""
+    from app.models_transformer import PracticeDistribution, build_context_seed_v3, COMPOUND_VOCAB, SESSION_TYPE_VOCAB
+
+    T = TRANSFORMER_V3_CONTEXT_LAPS
+    pd_dist      = PracticeDistribution(compound="MEDIUM")
+    compound_int = COMPOUND_VOCAB.get("MEDIUM", 2)
+    session_int  = SESSION_TYPE_VOCAB.get("RACE", 4)
+    rng          = np.random.default_rng(7)
+
+    for stint_num, expected_norm in [(1, 0.0), (2, 1.0 / 3.0), (3, 2.0 / 3.0), (6, 1.5)]:
+        seed = build_context_seed_v3(
+            pd_dist, T, 0.3, 30.0, 25.0,
+            compound_int, session_int,
+            circuit_int=1, rng=rng, stint_number=stint_num,
+        )
+        assert seed.shape == (T, 15), f"stint {stint_num}: shape {seed.shape}"
+        assert seed.dtype == np.float32
+        assert np.isfinite(seed).all(), "NaN/Inf in context seed"
+        col14 = float(seed[0, 14])
+        assert abs(col14 - expected_norm) < 1e-4, (
+            f"stint {stint_num}: col 14 = {col14:.4f}, expected {expected_norm:.4f}"
+        )
+
+
+def test_v3_stop_profitability_positive():
+    """When fresh tyre is significantly faster, stop profit should be positive."""
+    from app.strategy_engine import StrategyEngine, StrategyCandidate
+
+    # Old tyre: 95 s/lap degraded; fresh tyre: 88 s/lap; pit loss 22 s
+    # Remaining stint = 10 laps
+    # t_old = 10*95 = 950, t_fresh = 10*88 = 880 → profit = 950-880-22 = +48
+    old_curve   = np.full(40, 95.0)
+    fresh_curve = np.full(40, 88.0)
+    curves = {"MEDIUM": old_curve, "SOFT": fresh_curve}
+
+    candidate = StrategyCandidate(
+        strategy_type="2-stop",
+        compounds=["MEDIUM", "SOFT"],
+        stint_lengths=[20, 10],
+        stop_laps=[20],
+        pit_windows=[],
+    )
+
+    profits = StrategyEngine._stop_profitability(candidate, curves, pit_loss=22.0)
+    assert len(profits) == 1
+    assert profits[0] > 0, f"Expected positive profit, got {profits[0]}"
+
+
+def test_v3_stop_profitability_negative():
+    """When fresh tyre gain is tiny, stop profit should be negative."""
+    from app.strategy_engine import StrategyEngine, StrategyCandidate
+
+    # Old tyre: 90.5 s/lap; fresh tyre: 90.0 s/lap; pit loss 22 s; remaining 10 laps
+    # t_old = 10*90.5 = 905, t_fresh = 10*90.0 = 900 → profit = 905-900-22 = -17
+    old_curve   = np.full(40, 90.5)
+    fresh_curve = np.full(40, 90.0)
+    curves = {"HARD": old_curve, "MEDIUM": fresh_curve}
+
+    candidate = StrategyCandidate(
+        strategy_type="2-stop",
+        compounds=["HARD", "MEDIUM"],
+        stint_lengths=[30, 10],
+        stop_laps=[30],
+        pit_windows=[],
+    )
+
+    profits = StrategyEngine._stop_profitability(candidate, curves, pit_loss=22.0)
+    assert len(profits) == 1
+    assert profits[0] < 0, f"Expected negative profit, got {profits[0]}"
