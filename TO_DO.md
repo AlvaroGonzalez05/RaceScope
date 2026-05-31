@@ -15,7 +15,7 @@ Generated from backend evaluation (2026-03-05). Ordered by priority.
 - Benchmark v1 vs v2: `scripts/benchmark_models.py`
 - Visualización entrenamiento: `scripts/plot_training.py`
 - 12 tests verdes: `pytest tests/test_transformer_model.py -v`
-- `CLAUDE.md`, `ARCHITECTURE.md`, `COMMANDS.md` actualizados
+- `ARCHITECTURE.md` y `COMMANDS.md` actualizados
 - **Entrenamiento v2 COMPLETADO** — 25 drivers + global, 50 epochs, patience=12
   - Global: val_mae=0.097, mediana drivers=0.117, D50 outlier=0.496
   - Relanzado con `--epochs 50 --patience 12` tras análisis de plots (instabilidad con 15 epochs)

@@ -5,12 +5,12 @@ import pytest
 # Torch / Metal availability
 # ---------------------------------------------------------------------------
 # On macOS Apple Silicon, PyTorch's Metal (MPS) framework initialises at the
-# first `import torch` call.  In non-interactive subprocess contexts (CI, the
-# Claude Code Bash tool, etc.) Metal lacks WindowServer entitlements and the
-# initialisation call blocks indefinitely — no signal or timeout can interrupt
-# it.  Tests marked `requires_torch` are therefore skipped automatically when
-# the `PYTEST_NO_TORCH` environment variable is set to "1", which happens when
-# running outside an interactive terminal.  To run these tests, use:
+# first `import torch` call.  In non-interactive subprocess contexts (CI, headless
+# shells, etc.) Metal lacks WindowServer entitlements and the initialisation call
+# blocks indefinitely — no signal or timeout can interrupt it.  Tests marked
+# `requires_torch` are therefore skipped automatically when the `PYTEST_NO_TORCH`
+# environment variable is set to "1", which happens when running outside an
+# interactive terminal.  To run these tests, use:
 #
 #   pytest tests/test_transformer_model.py          # from your own terminal
 #

@@ -7,9 +7,10 @@
 !.env.example
 !code/backend_fastapi/.env.example
 
-# Claude Code session state
+# Local session state and personal style guides
 .claude/
 CLAUDE.md
+CLAUDE_BANNED.md
 
 # Python
 __pycache__/
