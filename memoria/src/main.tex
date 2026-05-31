@@ -1,0 +1,381 @@
+%%%%%%%%%%%%%%%%%%%%
+% Plantilla TFG — Universidad Pontificia Comillas (ICAI)
+% Adaptada para: RaceScope — TFG Grado en Business Analytics
+% Autor: Álvaro González Tabernero
+% Curso: 2024/25
+%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[12pt, a4paper]{book}
+
+%% ─── PAQUETES BÁSICOS ───────────────────────────────────────────────────────
+
+\usepackage[utf8]{inputenc}
+\usepackage[spanish, es-tabla]{babel}
+\usepackage{parskip}
+\usepackage{amsmath, amsfonts, amssymb}   % Notación matemática
+\usepackage{fancyhdr}                      % Cabeceras y pies de página
+\usepackage{titlesec}                      % Formato de títulos
+\usepackage{graphicx}                      % Importación de gráficos
+\usepackage{geometry}                      % Márgenes
+\usepackage{booktabs}                      % Tablas de calidad
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=black,
+    citecolor=black}                       % Referencias e hipervínculos
+\usepackage{listings}                      % Listados de código
+\usepackage{xcolor}                        % Colores extendidos
+\usepackage[final]{pdfpages}               % Incluir PDFs directamente
+\usepackage[backend=biber,
+            style=numeric,
+            citestyle=numeric,
+            sorting=none]{biblatex}
+
+% NOTA COMPILACIÓN (VS Code + LaTeX Workshop):
+%   La receta correcta es: pdflatex → biber → pdflatex → pdflatex
+%   En settings.json de LaTeX Workshop añade:
+%   "latex-workshop.latex.recipe.default": "pdflatex ➞ biber ➞ pdflatex*2"
+%   o usa la receta "latexmk (lualatex)" si prefieres LuaLaTeX.
+
+%% ─── PAQUETES ESPECIALIZADOS ────────────────────────────────────────────────
+
+\usepackage{algorithm2e}      % Pseudocódigo de algoritmos
+\usepackage{todonotes}        % Notas TODO en el margen
+\usepackage{siunitx}          % Unidades del SI
+\usepackage{eurosym}          % Símbolo del euro
+\usepackage{caption}
+\usepackage{subcaption}       % Subfiguras
+\usepackage{float}            % Control de posición de figuras [H]
+\usepackage{tabularx}         % Tablas con ancho adaptable
+\usepackage{colortbl}         % Colores en tablas
+\usepackage{longtable}        % Tablas multipágina
+\usepackage{multirow}         % Celdas que abarcan filas
+\usepackage{enumitem}         % Control de listas
+\usepackage{setspace}         % Interlineado
+\usepackage{footnote}         % Notas al pie
+\usepackage{microtype}        % Mejora tipográfica
+\usepackage{array}            % Columnas de tabla personalizadas
+\usepackage{pifont}           % Símbolos especiales (✓, ✗)
+\usepackage{csquotes}         % Citas tipográficas correctas
+\usepackage{tikz}             % Diagramas vectoriales
+\usetikzlibrary{shapes, arrows, positioning, fit, calc}
+
+%% ─── CONFIGURACIÓN DE PAQUETES ──────────────────────────────────────────────
+
+% Bibliografía
+\addbibresource{main.bib}
+
+% Marcador temporal para pasajes pendientes de citar.
+% Cuando se inserte la cita real, basta con sustituir \needcite{...} por su
+% contenido y añadir el \cite{...} correspondiente.
+\newcommand{\needcite}[1]{\textcolor{red}{#1}}
+
+% Cabeceras y pies de página
+\fancyhf{}
+\fancyhead[LE]{\slshape \leftmark}
+\fancyhead[RO]{\slshape \nouppercase \rightmark}
+\fancyfoot[LE, RO]{\thepage}
+% Si el nombre del capítulo es muy largo para la cabecera, usa:
+% \chapter[Título corto]{Título largo completo}
+
+% Configuración de listings (código Python)
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.97,0.97,0.97}
+
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=4,
+    language=Python
+}
+\lstset{style=pythonstyle}
+
+% Configuración de listings (JSON)
+\lstdefinelanguage{json}{
+    basicstyle=\ttfamily\footnotesize,
+    morestring=[b]",
+    stringstyle=\color{codepurple},
+    literate=
+     *{0}{{{\color{blue}0}}}{1}
+      {1}{{{\color{blue}1}}}{1}
+      {2}{{{\color{blue}2}}}{1}
+      {3}{{{\color{blue}3}}}{1}
+      {4}{{{\color{blue}4}}}{1}
+      {5}{{{\color{blue}5}}}{1}
+      {6}{{{\color{blue}6}}}{1}
+      {7}{{{\color{blue}7}}}{1}
+      {8}{{{\color{blue}8}}}{1}
+      {9}{{{\color{blue}9}}}{1}
+      {:}{{{\color{black}{:}}}}{1}
+      {,}{{{\color{black}{,}}}}{1}
+      {\{}{{{\color{black}{\{}}}}{1}
+      {\}}{{{\color{black}{\}}}}}{1}
+      {[}{{{\color{black}{[}}}}{1}
+      {]}{{{\color{black}{]}}}}{1},
+    backgroundcolor=\color{backcolour},
+}
+
+%% ─── COMANDOS PERSONALIZADOS ────────────────────────────────────────────────
+
+% Entorno abstract para la clase book
+\newenvironment{abstract}%
+{\cleardoublepage \null \vfill \begin{center}%
+    \bfseries \abstractname \end{center}}%
+{\vfill\null}
+
+% Atajo para nombres de código/variables inline
+\newcommand{\code}[1]{\texttt{#1}}
+
+%% ─── DOCUMENTO ─────────────────────────────────────────────────────────────
+
+\begin{document}
+
+% ─── FRONTMATTER ─────────────────────────────────────────────────────────────
+\frontmatter
+\pagestyle{empty}
+
+% ── Portada ──────────────────────────────────────────────────────────────────
+\begin{titlepage}
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.3\linewidth]{LogoUniversidadBN}
+    \end{figure}
+    \centering
+    \Large Grado en Business Analytics \\
+    \vspace*{2.5em}
+    \centering
+    Trabajo fin de grado \\
+    \vspace*{1em}
+    \textbf{RACESCOPE: OPTIMIZACIÓN DE LA ESTRATEGIA DE CARRERA EN FÓRMULA 1 MEDIANTE INTELIGENCIA ARTIFICIAL}
+    \\ \large
+    \vspace*{3em}
+    Autor \\ Álvaro González Tabernero \\
+    \vspace*{1em}
+    Dirigido por \\ Pablo Martín Muñoz
+    \vfill
+    Madrid \\
+    Abril 2025
+\end{titlepage}
+
+% ── Página de declaración de autoría ─────────────────────────────────────────
+\cleardoublepage
+\thispagestyle{empty}
+\vspace{3cm}
+
+\begin{center}
+\setstretch{1.3}
+Declaro, bajo mi responsabilidad, que el Proyecto presentado con el título
+
+\vspace{1em}
+\textbf{\large RACESCOPE: OPTIMIZACIÓN DE LA ESTRATEGIA DE CARRERA EN FÓRMULA 1 MEDIANTE INTELIGENCIA ARTIFICIAL}
+
+\vspace{1em}
+en la ETS de Ingeniería - ICAI de la Universidad Pontificia Comillas en el curso
+académico 2025/26 es de mi autoría, original e inédito y no ha sido presentado con
+anterioridad a otros efectos.
+
+\vspace{1em}
+El Proyecto no es plagio de otro, ni total ni parcialmente y la información que ha
+sido tomada de otros documentos está debidamente referenciada.
+\end{center}
+
+\vspace{2cm}
+
+\noindent Fdo.: Álvaro González Tabernero \hfill Fecha: \underline{\hspace{3cm}}
+
+\vspace{2cm}
+
+\begin{center}
+Autorizada la entrega del proyecto
+
+\vspace{1em}
+\textbf{EL DIRECTOR DEL PROYECTO}
+\end{center}
+
+\vspace{1em}
+\noindent Fecha: \underline{\hspace{3cm}}
+
+\vspace{0.5em}
+\noindent Fdo.: Pablo Martín Muñoz
+
+% ── Resumen ejecutivo (ES) ────────────────────────────────────────────────────
+% \cleardoublepage
+% 
+% \noindent
+% \textbf{\large RACESCOPE: OPTIMIZACIÓN DE LA ESTRATEGIA DE CARRERA EN FÓRMULA 1 MEDIANTE INTELIGENCIA ARTIFICIAL}\\
+% 
+% \noindent
+% \textbf{Autor:} Álvaro González Tabernero\\
+% \textbf{Director:} Pablo Martín Muñoz\\
+% \textbf{Entidad colaboradora:} Universidad Pontificia Comillas, ETS de Ingeniería - ICAI\\
+
+% \noindent
+% \textbf{RESUMEN DEL PROYECTO}\\
+% % TODO: Escribir resumen (~150 palabras)
+% \todo{Escribir resumen del proyecto en español.}\\
+
+% \noindent \textbf{Palabras clave:}\\
+% % TODO: Completar palabras clave
+% inteligencia artificial, Transformers, simulación Monte Carlo, estrategia de carrera,
+% Fórmula 1, predicción de tiempos de vuelta, degradación de neumáticos,
+% aprendizaje profundo, optimización bajo incertidumbre, FastAPI.\\
+
+% \noindent \textbf{MOTIVACIÓN}\\
+% % TODO: Escribir motivación (~150 palabras)
+% \todo{Escribir motivación.}\\
+
+% \noindent \textbf{OBJETIVOS}\\
+% % TODO: Escribir objetivos
+% \todo{Escribir objetivos del proyecto.}\\
+
+% \noindent \textbf{METODOLOGÍA}\\
+% La metodología se estructura en cuatro fases:
+% \begin{enumerate}
+%     \item Ingestión y preprocesamiento de datos de telemetría F1 desde la API OpenF1.
+%     \item Entrenamiento de modelos Transformer de predicción de tiempos de vuelta
+%           específicos por piloto, con fallback a un modelo global.
+%     \item Diseño e implementación de un motor de estrategia organizado en tres
+%           componentes: resolución analítica de la vuelta óptima, optimizador de
+%           cartera estratégica y refinamiento Monte Carlo del Top-$K$.
+%     \item Desarrollo de una API REST (FastAPI) y una aplicación web (React + Vite)
+%           para la exploración interactiva de estrategias pre-carrera.
+% \end{enumerate}
+% \vspace{1em}
+% % TODO: Insertar figura de metodología
+% % \begin{figure}[H]
+% %     \centering
+% %     \includegraphics[width=0.65\textwidth]{images/metodologia.png}
+% %     \caption{Metodología del sistema RaceScope. Elaboración propia.}
+% %     \label{fig:metodologia_resumen}
+% % \end{figure}
+
+% \noindent \textbf{RESULTADOS}\\
+% % TODO: Escribir resultados
+% \todo{Escribir resultados principales.}\\
+
+% \noindent \textbf{CONCLUSIONES}\\
+% % TODO: Escribir conclusiones
+% \todo{Escribir conclusiones.}\\
+
+% ── Resumen ejecutivo (EN) ────────────────────────────────────────────────────
+% \cleardoublepage
+% 
+% \noindent
+% \textbf{\large RACESCOPE: REAL-TIME RACE STRATEGY OPTIMISATION IN MOTORSPORT USING ARTIFICIAL INTELLIGENCE}\\
+% 
+% \noindent
+% \textbf{Author:} Álvaro González Tabernero\\
+% \textbf{Supervisor:} Pablo Martín Muñoz\\
+% \textbf{Collaborating Institution:} Universidad Pontificia Comillas, ETS de Ingeniería - ICAI\\
+
+% \noindent
+% \textbf{PROJECT ABSTRACT}\\
+% % TODO: Escribir abstract en inglés
+% \todo{Write project abstract in English.}\\
+
+% \noindent \textbf{Keywords:}\\
+% artificial intelligence, Transformers, Monte Carlo simulation, race strategy,
+% Formula 1, lap time prediction, tyre degradation, deep learning,
+% optimisation under uncertainty, FastAPI.\\
+
+% \noindent \textbf{MOTIVATION}\\
+% % TODO
+% \todo{Write motivation in English.}\\
+
+% \noindent \textbf{OBJECTIVES}\\
+% % TODO
+% \todo{Write objectives in English.}\\
+
+% \noindent \textbf{METHODOLOGY}\\
+% The methodology is structured into four phases:
+% \begin{enumerate}
+%     \item Ingestion and preprocessing of F1 telemetry data from the OpenF1 API.
+%     \item Training of per-driver Transformer models for lap time prediction, with
+%           fallback to a global model.
+%     \item Design and implementation of a strategy engine organised in three
+%           components: analytical resolution of the optimal pit lap, strategic
+%           portfolio optimiser and Monte Carlo refinement of the top-$K$ candidates.
+%     \item Development of a REST API (FastAPI) and a web application (React + Vite)
+%           for interactive pre-race strategy exploration.
+% \end{enumerate}
+% % TODO: Insertar figura de metodología (inglés)
+% % \begin{figure}[H]
+% %     \centering
+% %     \includegraphics[width=0.65\textwidth]{images/metodologia.png}
+% %     \caption{RaceScope system methodology. Own elaboration.}
+% %     \label{fig:metodologia_resumen_en}
+% % \end{figure}
+
+% \noindent \textbf{RESULTS}\\
+% % TODO
+% \todo{Write results in English.}\\
+
+% \noindent \textbf{CONCLUSIONS}\\
+% % TODO
+% \todo{Write conclusions in English.}\\
+
+% ── Agradecimientos ───────────────────────────────────────────────────────────
+% \cleardoublepage
+
+% {\centering \textbf{Agradecimientos}\\}
+% \noindent
+% % TODO: Escribir agradecimientos personalizados para este TFG
+% \todo{Escribir agradecimientos.}
+
+% ── Índices ───────────────────────────────────────────────────────────────────
+\cleardoublepage
+\tableofcontents
+\listoffigures
+\listoftables
+\lstlistoflistings
+
+\cleardoublepage
+
+% ─── MAINMATTER ──────────────────────────────────────────────────────────────
+\mainmatter
+\pagestyle{fancy}
+
+\include{Chapter1/chapter1}
+\cleardoublepage
+
+\include{Chapter2/chapter2}
+\cleardoublepage
+
+\include{Chapter3/chapter3}
+\cleardoublepage
+
+\include{Chapter4/chapter4}
+\cleardoublepage
+
+% \include{Chapter5/chapter5}
+% \cleardoublepage
+% 
+% \include{Chapter6/chapter6}
+% \cleardoublepage
+
+% ─── BIBLIOGRAFÍA ────────────────────────────────────────────────────────────
+\printbibliography[heading=bibintoc]
+
+% ─── ANEXOS ──────────────────────────────────────────────────────────────────
+\appendix
+\include{Annex/annexI}
+\cleardoublepage
+
+\backmatter
+\end{document}

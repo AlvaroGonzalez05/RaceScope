@@ -1,0 +1,84 @@
+%% ─────────────────────────────────────────────────────────────────────────────
+%% Capítulo 1 — Introducción
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\chapter{Introducción}
+\label{cap:introduccion}
+
+% Párrafo introductorio (~2-3 párrafos): situar al lector en el contexto del
+% proyecto antes de entrar en motivación y objetivos.
+% ¿Qué es la estrategia de carrera en F1? ¿Por qué es un problema difícil?
+% ¿Qué aporta este trabajo?
+
+% ─────────────────────────────────────────────────────────────────────────────
+La Fórmula 1 es el máximo campeonato mundial de automovilismo, donde equipos y pilotos compiten en circuitos de todo el mundo para alcanzar victorias y campeonatos. Cada temporada consta de una serie de carreras (Grandes Premios, GPs) en las que participan 11 equipos y 22 pilotos, todos pilotando los monoplazas más rápidos del mundo y más avanzados tecnológicamente. La F1 es una competición de alta velocidad, precisión y estrategia que combina el rendimiento puro del monoplaza con una dimensión táctica de enorme complejidad.
+
+Aunque el talento del piloto y la calidad del coche determinan el techo de rendimiento disponible, la estrategia de carrera es el factor que a menudo decide quién lo aprovecha. Las decisiones tácticas sobre cuándo parar en boxes (pit stop), qué compuesto de neumáticos montar y cómo gestionar el ritmo para controlar la degradación, a menudo significan la diferencia entre ganar o perder una carrera. Esta complejidad se acentúa por factores impredecibles como los coches de seguridad (safety car, SC), las condiciones meteorológicas cambiantes o el tráfico en pista, que alteran continuamente el escenario de competición.
+
+La estrategia de carrera se puede reducir a la optimización del desgaste de los neumáticos durante el evento, y la gestión de los eventos impredecibles que puedan alterar repentinamente el estado de la carrera. Para ello, se requiere una gran cantidad de datos de telemetría del monoplaza, estadísticas sobre cada compuesto de neumático, información sobre el circuito, el asfalto, condiciones meteorológicas, el tráfico en pista, la probabilidad de safety car, etc.
+
+Hasta hace poco, los algoritmos y las aplicaciones para la determinación de estrategias de carrera eran muy complejas de hacer desde la perspectiva de un aficionado o un ingeniero independiente, ya que requerían acceso a una cantidad y un tipo de datos que solo tienen los equipos de F1, y que por su naturaleza son altamente confidenciales. Sin embargo, la democratización del acceso a estos datos gracias a plataformas como la \needcite{OpenF1 API}, sobre la que se construye este proyecto, y el avance en las técnicas de aprendizaje profundo permiten que cualquier persona desarrolle análisis estratégicos que antes requerían la infraestructura y los datos propietarios de los propios equipos.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Motivación}
+\label{sec:motivacion}
+
+% Guía de contenido:
+% - La estrategia de pit stop como factor decisivo en F1 (ejemplos reales).
+% - Complejidad del problema: degradación de neumáticos no lineal,
+%   incertidumbre del safety car, tráfico en pista, condiciones meteorológicas.
+% - Brecha entre las herramientas disponibles para equipos de F1 (propietarias,
+%   caras) y la comunidad académica / ingenieros independientes.
+% - Disponibilidad de datos abiertos (OpenF1) como oportunidad.
+% - Potencial de los Transformers para modelar series temporales de
+%   degradación de neumáticos.
+% - RaceScope como sistema accesible, reproducible y extensible.
+
+Desde que empecé a ver carreras de F1, siempre me ha fascinado el aspecto estratégico de la competición y cómo la diferencia de una vuelta en la parada en boxes cambia completamente el resultado de una carrera. Además, es la parte del fin de semana donde el trabajo de los analistas y los ingenieros de estrategia sale a relucir, y no se centra toda la actividad en el piloto. 
+
+Sin embargo, a pesar de mi interés y fascinación por la estrategia, siempre he sentido que, por la naturaleza compleja del tema, hay mucha gente que desprecia la carreras más estratégicas y se centran solo en la acción en pista y la adrenalina de los adelantamientos. GPs como Mónaco o Barcelona a menudo son criticados por ser ``aburridos'' o ``predecibles'', cuando en realidad esconden una batalla estratégica de fondo que es fascinante de analizar y entender.
+
+Además, el auge de la Inteligencia Artificial (IA) y de las técnicas de aprendizaje automático y profundo en los últimos años hacen de este el momento perfecto para impulsar una herramienta de este tipo. La capacidad de modelar la degradación de los neumáticos con Transformers entrenados de forma específica por piloto, y de simular estrategias bajo incertidumbre con métodos Monte Carlo, hace viable un análisis que hasta hace pocos años requería acceso a datos de telemetría restringidos a los propios equipos.
+
+Por tanto, este proyecto nace del deseo de intentar mostrar esta parte de la competición a gente que no la conoce o no la comprende, y de usar los conocimientos adquiridos durante el grado para crear una herramienta que permita a cualquier persona explorar y entender la estrategia de carrera en F1 de una manera accesible, visual e interactiva.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Objetivos}
+\label{sec:objetivos}
+
+% Guía de contenido:
+% Objetivo general + objetivos específicos numerados.
+% Ejemplo de estructura:
+
+El objetivo general de este Trabajo Fin de Grado es el diseño, implementación y evaluación de un sistema end-to-end (E2E) de exploración de estrategias de carrera en Fórmula 1, denominado \textbf{RaceScope}, que combina modelos de aprendizaje profundo para la predicción de tiempos de vuelta con un motor de simulación basado en Monte Carlo para la clasificación robusta de estrategias de pit stop.
+
+Para alcanzar este objetivo general, se plantean los siguientes objetivos específicos:
+\begin{enumerate}
+    \item Construir un pipeline de ingestión y preprocesamiento de datos de telemetría F1 a partir de la API OpenF1, generando una \textit{feature store} estructurada por temporada, circuito y piloto.
+
+    \item Diseñar y entrenar modelos de predicción de tiempos de vuelta específicos por piloto, con un modelo global de respaldo (\textit{fallback}) para pilotos con datos insuficientes.
+
+    \item Desarrollar un modelo paramétrico de degradación de neumáticos por piloto y compuesto, sensible a las condiciones de temperatura de pista y ambiente.
+
+    \item Implementar un motor de estrategia construido sobre tres componentes que colaboran: un perfil lineal por piloto que resuelve la vuelta óptima de parada por break-even cerrado, un Transformer que predice ritmo no lineal y refina las mejores candidatas por simulación Monte Carlo, y un optimizador de cartera estratégica que ordena las propuestas por una combinación media-varianza inspirada en Markowitz.
+
+    \item Desplegar el sistema completo como una aplicación web interactiva, con visualizaciones
+          de estrategias, tiempos de vuelta y análisis de sensibilidad.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Estructura del documento}
+\label{sec:estructura}
+
+% Guía de contenido:
+% Describir brevemente qué contiene cada capítulo.
+
+El presente documento se organiza de la siguiente manera:
+
+El \textbf{Capítulo~\ref{cap:estado_arte}} presenta el contexto y el estado del arte, cubriendo los fundamentos de la estrategia de carrera en Fórmula 1, la fuente de datos pública que sustenta el sistema, la arquitectura Transformer aplicada a la predicción de tiempos de vuelta, los modelos lineales jerárquicos como técnica de regularización para datos escasos y la simulación Monte Carlo combinada con un criterio media-varianza para la clasificación de estrategias bajo incertidumbre.
+
+El \textbf{Capítulo~\ref{cap:metodologia}} describe la metodología del sistema en su conjunto: la visión arquitectónica, el pipeline de datos, los modelos de predicción de ritmo y el diseño del motor de estrategia construido sobre tres componentes que colaboran.
+
+El \textbf{Capítulo~\ref{cap:caso_estudio}} desarrolla cada componente del sistema en detalle: el pipeline de ingestión y preprocesamiento, el Transformer entrenado por piloto, el perfil paramétrico de degradación, los tres motores que integran el módulo de estrategia y los criterios de evaluación empleados.
+
+Finalmente, el \textbf{Anexo~\ref{ann:ods}} recoge la alineación del proyecto con los Objetivos de Desarrollo Sostenible de las Naciones Unidas.

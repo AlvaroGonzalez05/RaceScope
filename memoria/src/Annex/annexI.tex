@@ -1,0 +1,49 @@
+%% ─────────────────────────────────────────────────────────────────────────────
+%% Anexo I — Alineación con los Objetivos de Desarrollo Sostenible
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\chapter{Alineación con los Objetivos de Desarrollo Sostenible}
+\label{ann:ods}
+
+Los Objetivos de Desarrollo Sostenible (ODS) de las Naciones Unidas constituyen
+un marco global de referencia para el desarrollo sostenible hasta 2030. A
+continuación se analiza la contribución de RaceScope a los ODS más relevantes.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{ODS 9 — Industria, innovación e infraestructura}
+
+RaceScope contribuye al ODS 9 con una solución de inteligencia artificial
+aplicada a la industria del motorsport. El sistema combina Transformers
+entrenados por piloto y simulación Monte Carlo como herramientas de apoyo a la
+decisión estratégica, reduciendo la dependencia de soluciones propietarias y
+ampliando el acceso a analítica deportiva avanzada fuera del entorno de los
+equipos de Fórmula~1.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{ODS 17 — Alianzas para lograr los objetivos}
+
+El proyecto se construye íntegramente sobre infraestructura y datos abiertos:
+la API OpenF1 (datos gratuitos de F1), librerías open-source (PyTorch, FastAPI,
+React) y el estándar Apache Parquet. Esta apuesta por el ecosistema abierto
+fomenta la colaboración entre la comunidad académica, investigadores
+independientes y aficionados al motorsport, alineándose con el espíritu de
+alianza e intercambio de conocimiento del ODS 17.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{ODS 4 — Educación de calidad}
+
+Al ser un sistema completamente reproducible —con documentación del pipeline,
+código abierto y arquitectura modular—, RaceScope puede servir como recurso
+educativo para estudiantes de ciencia de datos, ingeniería y analítica de
+negocios interesados en la aplicación práctica del aprendizaje automático a
+dominios de alta complejidad.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Impacto medioambiental del proyecto}
+
+El entrenamiento de los modelos Transformer se ejecuta en hardware estándar
+(CPU o una GPU de consumo) con tiempos por piloto del orden de minutos, lo que
+mantiene la huella de carbono computacional varios órdenes de magnitud por
+debajo de la de los modelos de lenguaje de gran escala. La inferencia se diseña
+para responder en segundos sobre CPU sin requerir aceleración dedicada en
+producción.

@@ -1,0 +1,110 @@
+%% ─────────────────────────────────────────────────────────────────────────────
+%% Capítulo 5 — Resultados y Evaluación
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\chapter{Resultados y Evaluación}
+\label{cap:resultados}
+
+% Párrafo introductorio: presentar la estructura del capítulo y el conjunto
+% de datos usado para la evaluación (temporada 2023, circuitos seleccionados).
+% Mencionar el entorno de ejecución (hardware, SO).
+
+\todo{Escribir párrafo de apertura del capítulo.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Configuración experimental}
+\label{sec:config_experimental}
+
+% Guía:
+% - Datos: temporada F1 2023, N circuitos, M pilotos.
+% - Hardware: CPU, RAM, GPU (si aplica para entrenamiento Transformer).
+% - Hiperparámetros: context_laps=40, d_model=384, n_layers=8, n_heads=8,
+%   MC_TOP_K=3, n_sim=100, risk_lambda=0.15.
+% - División train/test: por sesión (carreras = test, FP = train).
+%   Justificación de la separación temporal para series temporales.
+
+\todo{Escribir sección de configuración experimental.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Evaluación de los modelos de predicción de tiempos de vuelta}
+\label{sec:eval_modelos_pace}
+
+% Guía:
+% - Métricas: MAE, RMSE en segundos (tras desnormalización).
+% - Comparativa: modelo específico del piloto vs. modelo global.
+% - Tabla de resultados por piloto (top 10 pilotos del campeonato).
+% - Tabla de resultados por circuito (street circuits vs. permanent circuits).
+% - Análisis de curvas de degradación predichas vs. reales (figuras).
+% - Discusión: cuándo falla el modelo (vueltas de pit-out, SC, vueltas cortas).
+
+\todo{Escribir sección de evaluación de modelos de pace.}
+
+% Tabla de resultados por piloto:
+% \begin{table}[H]
+% \centering
+% \caption{MAE y RMSE de los modelos Transformer por piloto sobre el conjunto de test
+%          (temporada 2023, carreras).}
+% \label{tab:resultados_transformer}
+% \begin{tabular}{lrrrr}
+%     \toprule
+%     \textbf{Piloto} & \textbf{Driver ID} & \textbf{Vueltas entren.}
+%                     & \textbf{MAE (s)} & \textbf{RMSE (s)} \\
+%     \midrule
+%     Max Verstappen  & 1   & 312 & -- & -- \\
+%     Sergio Pérez    & 11  & 298 & -- & -- \\
+%     Lewis Hamilton  & 44  & 287 & -- & -- \\
+%     \vdots          &     &     &    &    \\
+%     \textit{Global} & --  & --  & -- & -- \\
+%     \bottomrule
+% \end{tabular}
+% \end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Validación del motor de estrategia}
+\label{sec:validacion_motor}
+
+% Guía:
+% - Para un conjunto de carreras históricas de 2023:
+%   (1) Generar las top-5 estrategias con RaceScope.
+%   (2) Identificar la estrategia real usada por el ganador.
+%   (3) Medir en qué posición del ranking aparece la estrategia real.
+% - Tabla: circuito, estrategia real, posición en el ranking, expected_time.
+% - Discusión: ¿en qué carreras se equivoca RaceScope y por qué?
+
+\todo{Escribir sección de validación del motor de estrategia.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Análisis de sensibilidad}
+\label{sec:analisis_sensibilidad}
+
+% Guía:
+% - Variación de \lambda (0.0, 0.05, 0.10, 0.15, 0.20, 0.25).
+% - Variación de pit_loss (20s, 22.5s, 25s, 28s).
+% - Variación de P(SC) (0.10, 0.20, 0.30).
+% - Variación de MC_TOP_K (3, 5, 8, 10) vs. n_sim (50, 100, 200, 500).
+
+\todo{Escribir sección de análisis de sensibilidad.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Rendimiento del sistema}
+\label{sec:rendimiento_sistema}
+
+% Guía:
+% - Resultados del benchmark_strategy.py: latencias cold, warm, hot.
+% - Tamaño de los modelos (.joblib): tamaño medio por piloto, total.
+% - Tamaño de la caché de curvas de pace.
+% - ¿Cumple el sistema el requisito de latencia < 2s en régimen caliente?
+
+\todo{Escribir sección de rendimiento del sistema.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discusión}
+\label{sec:discusion}
+
+% Guía:
+% - ¿Qué aporta RaceScope frente a trabajos relacionados
+%  ?
+% - Limitaciones actuales del sistema.
+% - ¿En qué condiciones es más/menos fiable?
+
+\todo{Escribir sección de discusión.}

@@ -1,0 +1,75 @@
+%% ─────────────────────────────────────────────────────────────────────────────
+%% Capítulo 6 — Conclusiones y Trabajo Futuro
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\chapter{Conclusiones y Trabajo Futuro}
+\label{cap:conclusiones}
+
+% Párrafo de apertura: síntesis global del trabajo realizado en 1-2 párrafos.
+% ¿Se han cumplido los objetivos del Cap. 1? ¿Cuál es la aportación principal?
+
+\todo{Escribir párrafo de apertura del capítulo.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusiones}
+\label{sec:conclusiones}
+
+% Guía:
+% Estructurar las conclusiones alrededor de los 5 objetivos específicos
+% del Cap. 1 (Sección~\ref{sec:objetivos}).
+% Para cada objetivo: ¿se ha alcanzado? ¿Cuáles son los resultados clave?
+
+\todo{Escribir sección de conclusiones.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Limitaciones}
+\label{sec:limitaciones}
+
+% Guía:
+% 1. pit_loss y P(SC) aún ruidosos; fallback hardcoded reduce calidad.
+% 2. Solo temporada 2023 (OpenF1 desde 2023).
+% 3. No incorpora dinámica de tráfico más allá del ruido gaussiano.
+% 4. No modela estrategias de undercut/overcut activo.
+% 5. No considera el impacto de la carga de combustible.
+% 6. La pestaña Live de la web no está implementada.
+% 7. I/O bloqueante en ingestión.
+
+\todo{Escribir sección de limitaciones.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Trabajo futuro}
+\label{sec:trabajo_futuro}
+
+\subsection{Mejoras a corto plazo}
+\label{ssec:mejoras_corto}
+
+% - Migrar el cliente HTTP a httpx.AsyncClient para I/O no bloqueante.
+% - Derivar pit_loss de los tiempos de parada en boxes (pit_out_time).
+% - Derivar P(SC) de counts históricos de mensajes de race control.
+% - Implementar caché TTLCache de cachetools en lugar del dict sin límite.
+% - Añadir logging estructurado (structlog, JSON lines).
+
+\todo{Escribir subsección de mejoras a corto plazo.}
+
+\subsection{Extensiones del modelo}
+\label{ssec:extensiones_modelo}
+
+% - Incorporar más temporadas (2024, 2025) cuando OpenF1 las incluya.
+% - Explorar variantes ligeras del Transformer (Linformer, Performer) para reducir coste.
+% - Explorar N-BEATS o PatchTST como baseline temporal alternativo.
+% - Integrar modelos fundacionales de series temporales como TimesFM.
+% - Modelar el undercut/overcut con un modelo de tráfico explícito.
+% - Añadir cuantificación de incertidumbre.
+
+\todo{Escribir subsección de extensiones del modelo.}
+
+\subsection{Evolución del sistema}
+\label{ssec:evolucion_sistema}
+
+% - Implementar las pestañas Live y Rewatch del frontend.
+% - Modelar interacciones estratégicas entre pilotos.
+% - Multi-agent RL para estrategias competitivas.
+% - Despliegue en cloud (Docker + Kubernetes).
+% - Integrar datos de otras categorías (F2, Formula-E) para transfer learning.
+
+\todo{Escribir subsección de evolución del sistema.}

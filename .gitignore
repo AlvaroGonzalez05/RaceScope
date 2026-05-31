@@ -58,3 +58,19 @@ code/backend_fastapi/benchmark_*.json
 
 # Legacy backend cache (safety)
 code/backend/f1_cache/
+
+# LaTeX build artefacts (memoria)
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lol
+*.lot
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+memoria/src/main.pdf

@@ -1,0 +1,231 @@
+%% ─────────────────────────────────────────────────────────────────────────────
+%% Capítulo 2 — Contexto y Estado del Arte
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\chapter{Contexto y Estado del Arte}
+\label{cap:estado_arte}
+
+A lo largo de este capítulo se exponen los pilares teóricos sobre los que se construye \textit{RaceScope}: la estrategia en Fórmula~1 como problema de decisión, la fuente de datos pública sobre la que se sustenta el sistema, la arquitectura Transformer aplicada a la predicción de tiempos de vuelta, los modelos lineales jerárquicos como técnica de regularización para regímenes de datos limitados y la simulación Monte Carlo combinada con un criterio media-varianza para la clasificación de estrategias bajo incertidumbre. La descripción concreta de cómo \textit{RaceScope} instancia cada uno de estos pilares se reserva para el Capítulo~\ref{cap:caso_estudio}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{La estrategia de carrera en Fórmula 1}
+\label{sec:estrategia_f1}
+
+La Fórmula 1 es una competición en la que el resultado final no depende únicamente de la velocidad absoluta del monoplaza ni del talento del piloto: la estrategia de carrera, entendida como el conjunto de decisiones sobre cuándo entrar a boxes, qué compuesto de neumático montar y a qué ritmo gestionar cada stint, puede alterar radicalmente el orden de llegada. Esta dimensión táctica convierte cada Gran Premio en un problema de optimización combinatoria de alta complejidad, en el que los equipos de ingenieros de estrategia deben tomar decisiones en tiempo real con información incompleta y bajo condiciones cambiantes.
+
+\subsection{El problema de la parada en boxes}
+\label{subsec:pit_stop}
+
+El reglamento deportivo de la FIA \needcite{obliga a los pilotos a utilizar al menos dos especificaciones de neumático distintas durante la carrera}. Esta restricción convierte la elección del número y momento de las paradas en boxes en la palanca de control estratégica central de cada equipo. La degradación de los neumáticos es la variable que gobierna esta decisión: a medida que el compuesto pierde adherencia, el tiempo de vuelta crece de forma no lineal, y en algún momento la pérdida de rendimiento supera el coste temporal de una parada en boxes, \needcite{que en F1 oscila entre 20 y 25 segundos incluyendo la trayectoria del pit lane}.
+
+La dificultad del problema reside en la combinación de múltiples factores interdependientes. En primer lugar, \needcite{la degradación del neumático es una función no lineal de la edad del compuesto, la temperatura de la pista, el estilo de conducción del piloto y la carga aerodinámica del vehículo}. En segundo lugar, los eventos estocásticos (coches de seguridad, banderas rojas, lluvia repentina) invalidan en segundos cualquier plan estratégico precalculado. En tercer lugar, la decisión de un equipo afecta directamente a los demás: reaccionar a una parada del rival puede o no ser óptimo dependiendo de la diferencia de ritmo real y el tráfico que se encontrará en pista tras la parada. \needcite{Esta interdependencia estratégica introduce componentes propias de la teoría de juegos en un problema que de otro modo podría tratarse como optimización individual}.
+
+\subsection{El ritmo de vuelta como variable clave}
+\label{subsec:ritmo_vuelta}
+
+La predicción del ritmo de vuelta es el componente operativo central de cualquier sistema de análisis estratégico. Consiste en estimar el tiempo que tardará un piloto en completar cada vuelta en función de la edad del neumático, el compuesto montado, las condiciones meteorológicas y el contexto de carrera. Esta capacidad predictiva es la que permite proyectar cuándo el neumático actual habrá degradado lo suficiente como para que sea ventajosa una parada, y qué tiempo de carrera total se espera bajo cada estrategia alternativa.
+
+Los equipos de Fórmula 1 han desarrollado modelos de ritmo propietarios de gran sofisticación, alimentados por sensores de telemetría propios y datos históricos de comportamiento del neumático. \textit{RaceScope} aborda este mismo problema desde una perspectiva open-source y sobre datos públicos; la sección siguiente describe la fuente de datos empleada y las secciones posteriores los pilares teóricos sobre los que se construye su modelo de ritmo y su motor de evaluación de estrategias.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Fuente de Datos: OpenF1}
+\label{sec:openf1}
+
+\needcite{OpenF1} es una API gratuita y de código abierto que proporciona datos históricos y en tiempo real de Fórmula~1. Expone tiempos de vuelta, telemetría de vehículos, información de pilotos y mensajes de control de carrera en formatos JSON y CSV, a partir de los canales oficiales de la Formula One Management (FOM).
+
+La API registra datos durante las sesiones de carrera a distintas granularidades temporales: los tiempos de vuelta y los cambios de stint se capturan vuelta a vuelta; la telemetría vehicular se muestrea a \SI{10}{Hz}. El histórico disponible desde la temporada 2023 permite el análisis retrospectivo de carreras y la comparación de rendimiento entre temporadas.
+
+Los datos de telemetría incluyen la posición del acelerador y freno, la activación del DRS, los cambios de marcha y la velocidad instantánea. Esta resolución permite identificar patrones de comportamiento individuales del piloto que el tiempo de vuelta agregado no captura.
+
+La API también integra información estructurada sobre pilotos, equipos y sus afiliaciones, junto con métricas de desempeño histórico que contextualizan el análisis competitivo.
+
+Para el proyecto \textit{RaceScope}, OpenF1 constituye la fuente primaria de datos, permitiendo la ingesta sistemática de características de carrera necesarias para el entrenamiento de modelos de predicción de tiempos de vuelta y la evaluación cuantitativa de estrategias de paradas en boxes. Como alternativa complementaria existe \needcite{FastF1}, una librería Python que encapsula datos de la API Ergast (deprecada en 2024) y de los canales de telemetría oficiales, aunque su granularidad temporal es inferior a la de OpenF1 para datos en tiempo real.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection{Endpoints principales de OpenF1}
+\label{subsec:openf1_endpoints}
+
+La API de OpenF1 expone múltiples endpoints REST organizados por dominio. A continuación se describen los endpoints más relevantes para \textit{RaceScope}, cada uno con estructura detallada de parámetros y respuestas que alimentan las distintas fases del motor de simulación.
+
+Los datos telemétricos se capturan a una frecuencia de \SI{10}{Hz} durante toda la sesión, generando millones de puntos por evento que son procesados en la canalización de características. La información de control (acelerador, freno, marcha) y dinámica (velocidad, DRS) alimenta al modelo Transformer que predice los tiempos de vuelta bajo condiciones variables de degradación de neumáticos y estrategia de parada. Los datos de vueltas, stints y meteorología operan a una granularidad mucho menor (una fila por vuelta o por stint) y constituyen el eje central de la ingeniería de características del sistema.
+
+\begin{table}[H]
+\centering
+\caption{Endpoint \texttt{/v1/car\_data} — Datos telemétricos del vehículo en tiempo real}
+\label{tab:openf1_car_data}
+\small
+\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
+\toprule
+\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
+\midrule
+\multirow{3}{*}{\textit{Identificadores}} & \texttt{driver\_number} & Número único del piloto (1–99) \\
+& \texttt{session\_key} & Identificador de sesión (entrenamiento, clasificación, carrera) \\
+& \texttt{meeting\_key} & Identificador del Gran Premio \\
+\midrule
+\multirow{4}{*}{\textit{Control Motor}} & \texttt{throttle} & Posición del acelerador (0–100\%), refleja agresividad y gestión de combustible \\
+& \texttt{brake} & Presión de frenada (0–100\%), crítico para identificar patrones de frenada en curvas \\
+& \texttt{rpm} & Revoluciones del motor (6,000–15,500 rpm), indicador de carga del motor \\
+& \texttt{n\_gear} & Marcha seleccionada (1–8), variable para optimización aerodinámica \\
+\midrule
+\multirow{3}{*}{\textit{Dinámica}} & \texttt{speed} & Velocidad instantánea (km/h), base para cálculo de tiempos de vuelta y degradación de neumáticos \\
+& \texttt{drs} & Estado de DRS activado (velocidad en km/h en recta), factor determinante en adelantamientos \\
+& \texttt{date} & Marca de tiempo ISO 8601 (precisión 0.1~s), permite reconstrucción de trayectorias \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Endpoint \texttt{/v1/laps} — Tiempos de vuelta y métricas agregadas por vuelta}
+\label{tab:openf1_laps}
+\small
+\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
+\toprule
+\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
+\midrule
+\multirow{3}{*}{\textit{Identificadores}} & \texttt{driver\_number} & Número del piloto \\
+& \texttt{session\_key} & Identificador de sesión \\
+& \texttt{lap\_number} & Número de vuelta dentro de la sesión (1–$N_\text{vueltas}$) \\
+\midrule
+\multirow{4}{*}{\textit{Tiempos}} & \texttt{lap\_duration} & Tiempo de vuelta en segundos; variable objetivo principal del modelo de predicción \\
+& \texttt{duration\_sector\_1} & Tiempo del sector 1 (s), útil para diagnóstico de rendimiento por zona \\
+& \texttt{duration\_sector\_2} & Tiempo del sector 2 (s) \\
+& \texttt{duration\_sector\_3} & Tiempo del sector 3 (s) \\
+\midrule
+\multirow{3}{*}{\textit{Contexto}} & \texttt{is\_pit\_out\_lap} & Booleano; indica que el piloto acaba de salir de boxes \\
+& \texttt{st\_speed} & Velocidad máxima en trampa de velocidad (km/h), proxy del potencial de motor \\
+& \texttt{date\_start} & Marca de tiempo de inicio de vuelta (ISO 8601) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Endpoint \texttt{/v1/stints} — Información de stints y compuestos de neumático}
+\label{tab:openf1_stints}
+\small
+\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
+\toprule
+\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
+\midrule
+\multirow{2}{*}{\textit{Identificadores}} & \texttt{driver\_number} & Número del piloto \\
+& \texttt{session\_key} & Identificador de sesión \\
+\midrule
+\multirow{4}{*}{\textit{Stint}} & \texttt{stint\_number} & Orden del stint en la carrera (1 = primer stint) \\
+& \texttt{lap\_start} & Vuelta en la que comienza el stint \\
+& \texttt{lap\_end} & Vuelta en la que finaliza el stint (o fin de carrera) \\
+& \texttt{compound} & Compuesto montado: \texttt{SOFT}, \texttt{MEDIUM}, \texttt{HARD}, \texttt{INTERMEDIATE}, \texttt{WET} \\
+\midrule
+\multirow{1}{*}{\textit{Estado}} & \texttt{tyre\_age\_at\_start} & Vueltas previas acumuladas en el neumático al inicio del stint \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Endpoint \texttt{/v1/weather} — Condiciones meteorológicas en pista}
+\label{tab:openf1_weather}
+\small
+\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
+\toprule
+\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
+\midrule
+\multirow{2}{*}{\textit{Temperatura}} & \texttt{track\_temperature} & Temperatura de la pista (\si{\celsius}), factor dominante en la degradación térmica del neumático \\
+& \texttt{air\_temperature} & Temperatura del aire (\si{\celsius}), afecta a la presión de inflado y el comportamiento del compuesto \\
+\midrule
+\multirow{3}{*}{\textit{Condiciones}} & \texttt{humidity} & Humedad relativa (\%), indicador de riesgo de lluvia \\
+& \texttt{rainfall} & Booleano; \texttt{true} si se detecta precipitación en el momento de la medición \\
+& \texttt{wind\_speed} & Velocidad del viento (m/s), relevante para la carga aerodinámica y la temperatura de pista \\
+\midrule
+\multirow{1}{*}{\textit{Temporal}} & \texttt{date} & Marca de tiempo de la medición (ISO 8601, muestreo cada $\approx$60~s) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Estos endpoints conforman la columna vertebral de la canalización de datos en \textit{RaceScope}. La granularidad temporal extrema del endpoint \texttt{/v1/car\_data} (muestreo a 0.1~s) captura dinámicas finas de comportamiento del piloto y del vehículo. Los datos del endpoint \texttt{/v1/laps} proporcionan la variable objetivo directa del modelo de predicción de tiempos de vuelta, mientras que los de \texttt{/v1/stints} permiten etiquetadar cada vuelta con su compuesto y edad de neumático correspondiente. Finalmente, los registros de \texttt{/v1/weather} aportan el contexto térmico imprescindible para los modelos de degradación paramétrica. El almacenamiento de estos datos en formato \needcite{Apache Parquet}, un formato columnar orientado a consultas analíticas, permite un acceso eficiente durante el entrenamiento de modelos y la ejecución del motor de simulación.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Transformers para la predicción de tiempos de vuelta}
+\label{sec:transformers_pace}
+
+La predicción del tiempo de vuelta como función de la edad del neumático, el compuesto montado y las condiciones de carrera es un problema de regresión sobre series temporales: cada carrera genera una secuencia ordenada en la que el valor futuro depende del historial reciente. \textit{RaceScope} aborda este problema con un encoder Transformer entrenado de forma específica por piloto.
+
+La arquitectura Transformer, \needcite{propuesta originalmente por Vaswani \textit{et al.} para tareas de traducción}, sustituye la recurrencia por capas de atención multi-cabeza, en las que cada elemento de la secuencia atiende a todos los demás con pesos aprendidos dinámicamente. Para un input $\mathbf{X} \in \mathbb{R}^{T \times d}$ de longitud $T$ y dimensión $d$, una cabeza de atención escala-producto computa:
+
+\begin{equation}
+    \begin{aligned}
+        \mathrm{Attention}(\mathbf{Q},\mathbf{K},\mathbf{V})
+        &= \mathrm{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^{\top}}{\sqrt{d_k}}\right)\mathbf{V}, \\
+        \mathbf{Q} &= \mathbf{X}\mathbf{W}_{Q}, \qquad
+        \mathbf{K} = \mathbf{X}\mathbf{W}_{K}, \qquad
+        \mathbf{V} = \mathbf{X}\mathbf{W}_{V}
+    \end{aligned}
+\end{equation}
+
+donde las proyecciones $\mathbf{W}_Q, \mathbf{W}_K, \mathbf{W}_V$ son parámetros entrenables. Apilando $H$ cabezas en paralelo y proyectando su concatenación se obtiene la atención multi-cabeza, que se intercala con redes feed-forward en cada bloque del encoder.
+
+A esta operación se le suman tres elementos arquitectónicos centrales para el rendimiento del Transformer en problemas de regresión sobre secuencias temporales:
+
+\begin{itemize}
+    \item \textbf{Codificación posicional.} La atención es invariante a permutaciones, de modo que sin información adicional el modelo no distingue el orden de los elementos de la secuencia. \needcite{La propuesta original añade una codificación posicional sinusoidal a las representaciones de entrada}; trabajos posteriores introducen codificaciones aprendidas durante el entrenamiento o variantes relativas, que se ajustan mejor a longitudes de secuencia fijas.
+    \item \textbf{Variantes Pre-LN y Post-LN.} \needcite{Las dos variantes difieren en la ubicación de la normalización por capa dentro de cada bloque del encoder}. La variante Pre-LN, que aplica la normalización antes de la atención y de la red feed-forward, presenta una optimización más estable y permite entrenar redes profundas sin un calentamiento agresivo de la tasa de aprendizaje.
+    \item \textbf{Compuertas multiplicativas.} \needcite{Popularizadas por arquitecturas como Highway Networks, GLU y FiLM}, las compuertas multiplicativas permiten modular cada dimensión del espacio de representación en función de una entrada externa, habitualmente categórica. Aplicadas a un par estático de identificadores, ofrecen un prior estructural que sesga la representación hacia el régimen típico de ese par sin alterar la dinámica temporal del resto de la secuencia.
+\end{itemize}
+
+El entrenamiento de un encoder Transformer en regímenes de pocos datos descansa sobre tres decisiones de optimización con base teórica establecida. La \needcite{pérdida de Huber} combina el comportamiento cuadrático de la MSE para errores pequeños con el lineal de la MAE para errores grandes, lo que reduce la influencia de vueltas atípicas (pit-out, safety car) sin perder diferenciabilidad. El optimizador \needcite{AdamW} desacopla la regularización L2 del paso de actualización, evitando la interacción no deseada entre los términos de momento y de regularización presente en la formulación original de Adam. 
+
+El planificador \needcite{OneCycleLR} sustituye un calentamiento manual de la tasa de aprendizaje por una trayectoria triangular (subida, bajada y recocido final) que acelera la convergencia y reduce la sensibilidad al valor inicial.
+
+Sobre esta base, tres propiedades de la familia Transformer justifican su adopción en el problema del ritmo de vuelta:
+
+\begin{itemize}
+    \item \textbf{Contexto global por defecto}: cada vuelta de la ventana atiende a todas las demás sin restricciones de orden, lo que captura interacciones a distancia (la vuelta de la última parada influye explícitamente sobre la actual).
+    \item \textbf{Aprovechamiento del par estático (circuito, compuesto)}: las dos variables identificadoras estáticas por secuencia alimentan la compuerta multiplicativa descrita arriba para construir un prior específico de cada par.
+    \item \textbf{Cabezas auxiliares}: el encoder puede atacar simultáneamente varios objetivos (delta de ritmo respecto al stint, tiempo absoluto, tasa de degradación, coste remanente del stint) compartiendo representación, lo que regulariza el entrenamiento sin necesidad de dropout.
+\end{itemize}
+
+El argumento histórico contra los Transformers, que requieren mucho dato, se invierte cuando el objetivo es deliberadamente memorizar el comportamiento de un único piloto. Con dropout cero, un Transformer especializado por piloto se ajusta con precisión al subespacio efectivo de la combinación piloto-circuito-compuesto sin pretender generalizar más allá del dominio observado.
+
+El Capítulo~\ref{cap:caso_estudio} detalla la configuración concreta de la red ($d_\text{model} = 384$, 8 capas, contexto de 40 vueltas, 15 features continuos) y la trayectoria de diseño (v1 $\to$ v2 $\to$ v3) que llevó a esa configuración.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Modelos lineales jerárquicos para regímenes de datos limitados}
+\label{sec:modelos_jerarquicos}
+
+Cuando un problema de regresión se desagrega en muchas categorías y el número de observaciones por categoría es bajo, el ajuste independiente por categoría tiende al sobreajuste y produce coeficientes inestables. \needcite{Los modelos lineales jerárquicos resuelven esta limitación mediante el concepto de \textit{partial pooling}: los coeficientes estimados para un subgrupo con pocos datos se regularizan hacia los del nivel inmediatamente superior de la jerarquía, en lugar de estimarse de forma totalmente independiente}.
+
+Una implementación práctica habitual sustituye el ajuste bayesiano completo por una jerarquía explícita de niveles con \textit{fallback}: si un nivel concreto carece de observaciones suficientes, los parámetros se estiman sobre un nivel más agregado. El Capítulo~\ref{cap:caso_estudio} aplica este principio al perfil paramétrico de degradación de neumáticos, definiendo cuatro niveles desde el más específico (piloto, circuito y compuesto) hasta el más general (valores de seguridad por defecto).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Simulación Monte Carlo y optimización bajo incertidumbre}
+\label{sec:monte_carlo}
+
+Una vez disponible un modelo de ritmo de vuelta, el problema de la estrategia de carrera puede reformularse como la búsqueda de la secuencia de paradas en boxes (número de paradas, vueltas en que se realizan y compuestos a montar) que minimiza el tiempo total de carrera esperado. La dimensionalidad de este espacio de búsqueda es manejable para estrategias de una o dos paradas (del orden de decenas a centenares de candidatos), pero el carácter estocástico del entorno hace que la evaluación determinista de cada candidato sea insuficiente para una toma de decisiones robusta.
+
+\subsection{Fundamentos del método Monte Carlo}
+\label{subsec:fundamentos_mc}
+
+\needcite{El método de Monte Carlo, formalizado por Rubinstein y Kroese, proporciona un marco general para estimar el valor esperado de funciones de variables aleatorias mediante la media empírica de muestras generadas por simulación}. Dado un espacio de probabilidad $(\Omega, \mathcal{F}, \mathbb{P})$ y una función de coste $f(\mathbf{x}, \xi)$ que depende de la estrategia $\mathbf{x}$ y de los valores de las variables aleatorias $\xi$ (ej.~duración del pit stop, tiempo de safety car, variabilidad del ritmo), el estimador Monte Carlo de $\mathbb{E}_\xi[f(\mathbf{x}, \xi)]$ con $N$ simulaciones es:
+
+\begin{equation}
+    \hat{F}_N(\mathbf{x}) = \frac{1}{N} \sum_{n=1}^{N} f(\mathbf{x}, \xi^{(n)}), \quad \xi^{(n)} \overset{\text{i.i.d.}}{\sim} \mathbb{P}_\xi
+\end{equation}
+
+\needcite{La convergencia del estimador es proporcional a $1/\sqrt{N}$, lo que implica que reducir el error a la mitad requiere cuadruplicar el número de simulaciones}.
+
+\subsection{Clasificación de estrategias bajo incertidumbre}
+\label{subsec:clasificacion_estrategias}
+
+En el contexto de la estrategia de carrera, no basta con seleccionar la estrategia de menor tiempo esperado: una estrategia con media ligeramente superior pero varianza mucho menor puede ser preferible en un contexto competitivo donde la consistencia es tan valiosa como el ritmo absoluto. Este criterio de compromiso entre media y riesgo se formaliza mediante el \textit{risk score}:
+
+\begin{equation}
+    \rho(\mathbf{x}) = \mathbb{E}[T(\mathbf{x})] + \lambda \cdot \mathrm{Var}[T(\mathbf{x})]
+\end{equation}
+
+donde $T(\mathbf{x})$ es el tiempo total de carrera bajo la estrategia $\mathbf{x}$, y $\lambda \geq 0$ es el parámetro de aversión al riesgo. \needcite{Esta formulación es análoga al marco de media-varianza de Markowitz en finanzas}, adaptada al dominio de la optimización de estrategias de carrera. Con $\lambda = 0$ el criterio colapsa al tiempo esperado puro; valores crecientes de $\lambda$ penalizan progresivamente la variabilidad de la estrategia. El Capítulo~\ref{cap:caso_estudio} desarrolla cómo este criterio se integra en el motor de estrategia de \textit{RaceScope} y qué valor de $\lambda$ se adopta como referencia.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Trabajos relacionados}
+\label{sec:trabajos_relacionados}
+
+El apoyo a la decisión estratégica en Fórmula~1 ha sido abordado por la literatura desde dos vías que, por construcción, no compiten con \textit{RaceScope}: \needcite{sistemas privados de los equipos que ejecutan en tiempo real durante la carrera sobre telemetría propietaria, y trabajos académicos sobre simuladores cerrados que no son reproducibles sin recrear el simulador}. \textit{RaceScope} ocupa un espacio distinto: pre-carrera, sobre datos públicos (OpenF1), completamente open-source, y con un motor de tres componentes (resolución analítica de la vuelta de pit, refinamiento Monte Carlo con el Transformer y optimizador de cartera estratégica) pensado para una audiencia más amplia que la de los ingenieros de los equipos.
