@@ -229,3 +229,24 @@ donde $T(\mathbf{x})$ es el tiempo total de carrera bajo la estrategia $\mathbf{
 \label{sec:trabajos_relacionados}
 
 El apoyo a la decisión estratégica en Fórmula~1 ha sido abordado por la literatura desde dos vías que, por construcción, no compiten con \textit{RaceScope}: \needcite{sistemas privados de los equipos que ejecutan en tiempo real durante la carrera sobre telemetría propietaria, y trabajos académicos sobre simuladores cerrados que no son reproducibles sin recrear el simulador}. \textit{RaceScope} ocupa un espacio distinto: pre-carrera, sobre datos públicos (OpenF1), completamente open-source, y con un motor de tres componentes (resolución analítica de la vuelta de pit, refinamiento Monte Carlo con el Transformer y optimizador de cartera estratégica) pensado para una audiencia más amplia que la de los ingenieros de los equipos.
+
+\subsection{Software y herramientas existentes}
+\label{subsec:herramientas_existentes}
+
+Las herramientas accesibles que cubren parcial o totalmente el flujo \textit{datos públicos $\to$ predicción de ritmo $\to$ recomendación de estrategia} se agrupan en cuatro categorías:
+
+\begin{itemize}
+    \item \textbf{Simuladores académicos de código abierto.} El simulador de carrera publicado por \needcite{Heilmeier \textit{et al.} (TU Munich)} es el referente público más próximo a un motor de estrategia completo. Enumera planes de paradas, modela la degradación con un ajuste paramétrico lineal por compuesto y evalúa cada plan mediante un esquema de Monte Carlo con eventos estocásticos de safety car. La predicción del ritmo descansa en ajustes lineales por compuesto y piloto, sin componente de aprendizaje sobre telemetría. \needcite{El trabajo previo de Bekker y Lotz} planteó el problema como una simulación de eventos discretos, sin distribuir código abierto reproducible.
+
+    \item \textbf{Librerías de acceso a datos.} \needcite{FastF1}, mencionada en \ref{sec:openf1} como complemento a OpenF1, ofrece descarga normalizada de vueltas, telemetría y eventos, así como utilidades de visualización por sesión. No incorpora motor de estrategia: el usuario obtiene los datos crudos y debe construir su análisis sobre ellos.
+
+    \item \textbf{Herramientas de análisis para aficionados.} \needcite{F1 Tempo} y proyectos similares centran su valor en la comparativa interactiva de ritmos por vuelta entre pilotos y compuestos. La parada en boxes se trata como un dato observado a representar, no como una decisión a optimizar.
+
+    \item \textbf{Sistemas de telemetría retransmitida.} \needcite{F1 Insights powered by AWS} produce gráficos predictivos integrados en la realización televisiva, como la predicción de la \textit{pit window} o la probabilidad de adelantamiento. El modelo subyacente es propietario y no se distribuye; su salida es información narrativa para la retransmisión, no una recomendación con curvas de ritmo y varianzas explícitas. \needcite{El predictor de estrategia de Pirelli} cumple un papel comparable durante el fin de semana de carrera y se publica como comunicado para medios.
+\end{itemize}
+
+Frente a este panorama, \textit{RaceScope} cubre cuatro funcionalidades que no aparecen reunidas en ninguna herramienta accesible. Primero, un modelo Transformer entrenado por piloto que captura no linealidades de degradación condicionadas al circuito y al compuesto activo (\ref{sec:transformers_pace}), allí donde los simuladores académicos públicos se limitan a un ajuste lineal por compuesto. 
+
+Segundo, una hibridación entre evaluación analítica y refinamiento Monte Carlo: la vuelta óptima de cada parada se resuelve en forma cerrada a partir del perfil paramétrico y el coste de Monte Carlo se reserva para refinar las candidatas mejor posicionadas, mientras que las alternativas open source aplican Monte Carlo sobre la enumeración completa de planes. 
+
+Tercero, un ranking sensible al riesgo con criterio media-varianza (\ref{subsec:clasificacion_estrategias}) que devuelve, junto al tiempo esperado de cada estrategia, una medida explícita de su variabilidad, frente a la salida puntual que ofrecen las herramientas para aficionados y los gráficos de retransmisión. Y finalmente, una distribución \textit{open source} ejecutable sobre un equipo de sobremesa, con entrenamiento y generación de estrategias reproducibles a partir del repositorio.

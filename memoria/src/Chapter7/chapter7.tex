@@ -33,6 +33,13 @@
 % 5. No considera el impacto de la carga de combustible.
 % 6. La pestaña Live de la web no está implementada.
 % 7. I/O bloqueante en ingestión.
+% 8. Los coeficientes OLS del perfil paramétrico (§3) y los rollouts del
+%    Transformer (§2) operan sin garantías físicas en pilotos con muestra
+%    reducida. La envoltura de validez (§4.4.5) los acota dentro del rango
+%    histórico del circuito, lo que reduce la dispersión cross-driver de
+%    8\,343 s a 375 s en Sakhir 2023, pero no resuelve el sobreajuste de
+%    raíz; un perfil entrenado sobre datos limpios seguiría siendo
+%    preferible a depender del clamp final.
 
 \todo{Escribir sección de limitaciones.}
 
