@@ -1,40 +1,81 @@
 %% ─────────────────────────────────────────────────────────────────────────────
-%% Capítulo 6 — Conclusiones y Trabajo Futuro
+%% Capítulo 7 — Discusión, Conclusiones y Trabajo Futuro
 %% ─────────────────────────────────────────────────────────────────────────────
 
-\chapter{Conclusiones y Trabajo Futuro}
+\chapter{Discusión, Conclusiones y Trabajo Futuro}
 \label{cap:conclusiones}
 
-% Párrafo de apertura: síntesis global del trabajo realizado en 1-2 párrafos.
-% ¿Se han cumplido los objetivos del Cap. 1? ¿Cuál es la aportación principal?
+Este capítulo cierra el trabajo en tres planos. El apartado~\ref{sec:discusion} lee de manera conjunta la evaluación de calibración sobre la temporada 2025, la simulación del campeonato Verstappen-Norris y el comportamiento de la aplicación web, fijando hasta dónde llega el experimento y dónde se queda corto. El apartado~\ref{sec:conclusiones} extrae las conclusiones contrastándolas con los objetivos planteados en el capítulo~\ref{cap:introduccion}. Los apartados~\ref{sec:limitaciones} y~\ref{sec:trabajo_futuro} enumeran las limitaciones reconocidas y las líneas de continuación a corto y a medio plazo.
 
-\todo{Escribir párrafo de apertura del capítulo.}
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discusión de los resultados}
+\label{sec:discusion}
+
+La evaluación de calibración sobre la temporada 2025 mantenida íntegramente como \textit{held-out} ofrece la primera lectura cuantitativa del motor (\ref{sec:eval_calibracion}). El MAPE se mantiene entre el 13{,}5\,\% y el 14{,}6\,\% en los cuatro pilotos evaluados, una franja estrecha de poco más de un punto porcentual, con Leclerc como mejor calibrado y Piastri como el más alejado. 
+
+Lo verdaderamente significativo de la lectura es el sesgo medio: positivo y de magnitud similar entre +636\,s y +692\,s en los cuatro pilotos, sobre un Gran Premio que dura del orden de \SI{5400}{\second}. La coincidencia en signo y orden de magnitud descarta el ruido aleatorio como explicación; si lo fuera, los cuatro pilotos no compartirían ni dirección ni amplitud. El sesgo es por tanto atribuible al motor y se reparte entre tres mecanismos de protección que actúan en cascada: el margen de \SI{60}{\second} aplicado para protegerse frente a un \textit{safety car}, la elección del tiempo esperado como cuantil alto de la distribución Monte Carlo, y el filtro de vueltas limpias en el lado real, que rebaja por construcción la referencia. Los picos del error firmado se concentran en Melbourne y Spa por causas externas a la decisión estratégica (bandera roja en Australia, lluvia intermitente en Bélgica) que reducen el tiempo real muy por debajo de la duración nominal y que el motor, planteado bajo la hipótesis de carrera completa, no puede anticipar.
+
+La simulación del campeonato entre Verstappen y Norris cambia la pregunta: de cuánto se aleja cada predicción del tiempo real a quién gana el duelo directo carrera a carrera. El sesgo común detectado en la calibración se cancela en buena medida al comparar dos pilotos afectados por la misma magnitud y signo, de modo que la cifra absoluta importa menos que la diferencia entre las dos predicciones. 
+
+Pese a esta ventaja estructural, el resultado sigue siendo poco favorable: \textit{RaceScope} declara a Verstappen vencedor por 70 puntos cuando el duelo real entre ambos termina empatado a 11-11, una distancia de un campeón completo entre la simulación y la realidad. La concordancia del 50~\% en el ganador carrera a carrera es la cifra que mejor resume esta brecha y coincide con la probabilidad de un sorteo aleatorio entre dos pilotos de élite.
+
+Las dos limitaciones estructurales ya identificadas en el capítulo~\ref{cap:caso_estudio} completan el cuadro y explican gran parte del comportamiento observado en los dos apartados anteriores: la deriva temporal entre las temporadas de entrenamiento (2023-2024) y el conjunto evaluado (2025), que la acotación de la envoltura por circuito amplifica al impedir predicciones más rápidas que la cota empírica anterior, y la ausencia de información de carrera en tiempo real (rivales, tráfico, decisiones reactivas del muro) que en la realidad gobierna parte de las posiciones finales.
+
+El comportamiento del sistema sobre el caso de uso principal, el análisis Pre-race con comparativa dual, sí cumple su función: la aplicación web entrega resultados estables en cuestión de segundos sobre una interfaz coherente, con tema dual e internacionalización funcional. Las pestañas Live y Rewatch quedan reservadas para futuras iteraciones del prototipo. La cota de validez física descrita en el capítulo~\ref{cap:caso_estudio} mitiga los modos de fallo numérico más graves del modelo paramétrico, aunque su efecto secundario, la imposibilidad de adaptarse a un régimen más rápido que el observado en el conjunto de entrenamiento, queda señalado por esta misma evaluación como la siguiente limitación a resolver.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Conclusiones}
 \label{sec:conclusiones}
 
-% Guía:
-% Estructurar las conclusiones alrededor de los 5 objetivos específicos
-% del Cap. 1 (Sección~\ref{sec:objetivos}).
-% Para cada objetivo: ¿se ha alcanzado? ¿Cuáles son los resultados clave?
+Las conclusiones del trabajo se ordenan en torno al objetivo general y a los cinco objetivos específicos planteados en \ref{sec:objetivos}. Para cada uno se indica el grado de consecución y el resultado clave del documento que lo respalda.
 
-\todo{Escribir sección de conclusiones.}
+El \textbf{objetivo general} consistía en diseñar, implementar y evaluar un sistema \textit{end-to-end} de exploración de estrategias de carrera en Fórmula~1 que combinara aprendizaje profundo para la predicción de tiempos de vuelta con simulación Monte Carlo para la clasificación de estrategias de \textit{pit stop}. El sistema está construido como una pieza única que va desde la ingesta de datos públicos hasta la entrega de estrategias rankeadas al usuario, se ha evaluado sobre la temporada 2025 mantenida íntegramente como conjunto \textit{held-out}, y se materializa en la aplicación web descrita en \ref{sec:aplicacion_web}. 
+
+El alcance del prototipo entregado se restringe al análisis pre-carrera; las vistas en directo y de reproducción posterior, anunciadas en el diseño original, quedan reservadas como continuación natural del trabajo en \ref{ssec:evolucion_sistema}.
+
+Sobre los \textbf{cinco objetivos específicos} la valoración es la siguiente.
+
+\begin{enumerate}
+    \item \textbf{Pipeline de ingestión y preprocesamiento de datos de telemetría F1 (alcanzado).} El sistema descarga las temporadas solicitadas de la API \textit{OpenF1} con un cliente que respeta los límites de tasa mediante \textit{token bucket} y reintento con \textit{backoff} exponencial, y produce una \textit{feature store} estructurada por temporada, circuito y piloto sobre la que se construyen los modelos (\ref{sec:pipeline_datos}). Las quince características continuas, las tres categóricas y los dos identificadores estáticos que alimentan el Transformer se enumeran en la Tabla~\ref{tab:features_transformer}.
+
+    \item \textbf{Modelos de predicción de tiempos de vuelta por piloto, con respaldo global (alcanzado).} La cuarta iteración del modelo, \textbf{Transformer v3} con $\approx \num{14.3e6}$ parámetros, se entrena de forma específica por piloto y conserva una cabeza global como respaldo para pilotos con datos insuficientes (\ref{sec:modelo_transformer}). La evaluación carrera a carrera sobre 2025 (\ref{sec:eval_calibracion}) reporta un MAPE entre el 13{,}5\,\% y el 14{,}6\,\% en los cuatro pilotos evaluados, cifra que cuantifica el comportamiento del modelo sobre datos no vistos y permite identificar el sesgo común al alza discutido en \ref{sec:discusion}.
+
+    \item \textbf{Modelo paramétrico de degradación de neumáticos sensible a las condiciones térmicas (alcanzado).} El perfil lineal por piloto-circuito-compuesto descrito en \ref{sec:modelo_parametrico} captura la evolución del tiempo de vuelta como función de la antigüedad del \textit{stint} y de las desviaciones térmicas de pista y aire respecto a la referencia del circuito. La envoltura empírica del circuito (\ref{ssec:envoltura_circuito}) acota los coeficientes OLS dentro del rango físicamente admisible y reduce la dispersión entre pilotos del tiempo total esperado de \SI{8343}{\second} a \SI{375}{\second} sobre el caso de referencia de Sakhir 2023.
+
+    \item \textbf{Motor de estrategia construido sobre tres componentes que colaboran (alcanzado).} El motor opera tal como se planteó: el Motor~1 resuelve de forma cerrada la vuelta óptima de cada parada a partir del perfil lineal; el Motor~2 refina por Monte Carlo las mejores candidatas con el Transformer y cuantifica su incertidumbre; el Motor~3 ordena el conjunto con un criterio media-varianza inspirado en el marco de Markowitz (\ref{sec:motor_estrategia}). El uso del motor sobre las 22 carreras del duelo Verstappen-Norris en 2025 (\ref{sec:campeonato_ver_nor}) demuestra que la cadena completa opera de manera estable y produce resultados accionables sobre datos no vistos durante el entrenamiento.
+
+    \item \textbf{Despliegue como aplicación web interactiva (parcialmente alcanzado).} El cliente está desplegado y operativo en su caso de uso principal, la pestaña \textit{Pre-race} con análisis comparativo de dos pilotos sobre el mismo Gran Premio, tema dual claro/oscuro e internacionalización funcional (\ref{sec:aplicacion_web}). Las pestañas \textit{Live} y \textit{Rewatch} están presentes en la barra de navegación pero sin contenido funcional, y la vista de análisis de sensibilidad anunciada en el objetivo no se ha materializado en el prototipo. El cierre de estas tres piezas constituye el bloque principal de trabajo futuro a largo plazo recogido en \ref{ssec:evolucion_sistema}.
+\end{enumerate}
+
+En conjunto, cuatro de los cinco objetivos específicos se cumplen íntegramente y el quinto se cumple parcialmente en su componente más visible: la aplicación entregada cubre el caso de uso central pero deja abiertas las vistas en directo y de reproducción y el análisis de sensibilidad, que se trasladan a \ref{sec:trabajo_futuro}.
+
+Desde un punto de vista más personal y cercano a la motivación inicial del proyecto, \textit{RaceScope} consigue acercar al público general el detalle y los aspectos fundamentales para entender y valorar la estrategia en el contexto de un Gran Premio de Fórmula~1. Mediante la predicción de las estrategias previas a la carrera, el usuario es capaz de comparar y contrastar las posibilidades de su piloto favorito con las de sus rivales, y de anticipar el desarrollo de la carrera a partir de las paradas previstas. La aplicación web, con su interfaz y diseño enfocado en el usuario, hace accesible esta información a un público amplio, más allá de los expertos en análisis de datos o en estrategia deportiva. 
+
+Añadido a esto, si bien el la motivación inicial viene de acercar este mundo a aficionados menos técnicos, \textit{RaceScope} aporta mucho valor a los aficionados más avanzados, que pueden disfrutar de esta información de manera interactiva y visual, y que pueden profundizar en los detalles de la estrategia y su evolución a lo largo de la carrera. La posibilidad de comparar estrategias entre pilotos y de analizar cómo las condiciones de la carrera afectan a estas estrategias añade una capa adicional de comprensión y disfrute para los aficionados más comprometidos. \textit{RaceScope} hace posible que el aficionado sienta que el muro de ingenieros está en su casa.  
+
+En definitiva, el sistema no solo cumple con sus objetivos técnicos, sino que también logra su propósito de hacer que la estrategia de carrera sea más comprensible y atractiva.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Limitaciones}
 \label{sec:limitaciones}
 
-% Guía:
-% 1. pit_loss y P(SC) aún ruidosos; fallback hardcoded reduce calidad.
-% 2. Solo temporada 2023 (OpenF1 desde 2023).
-% 3. No incorpora dinámica de tráfico más allá del ruido gaussiano.
-% 4. No modela estrategias de undercut/overcut activo.
-% 5. No considera el impacto de la carga de combustible.
-% 6. La pestaña Live de la web no está implementada.
-% 7. I/O bloqueante en ingestión.
+Las limitaciones se ordenan de mayor a menor impacto sobre la calidad de la predicción y cada una cierra apuntando a la subsección de \ref{sec:trabajo_futuro} que la aborda, de modo que ambas listas puedan leerse en paralelo.
 
-\todo{Escribir sección de limitaciones.}
+\begin{enumerate}
+    \item \textbf{Deriva temporal entre temporadas.} Los modelos se entrenan con 2023-2024 y se evalúan sobre 2025, en el que los tiempos de carrera son consistentemente más rápidos. La envoltura del circuito impide predecir por debajo de la cota histórica y produce el sesgo sistemático al alza reportado en el capítulo~\ref{cap:resultados}. Se aborda en \ref{ssec:extensiones_modelo} con la incorporación incremental de nuevas temporadas y una capa de cuantificación de incertidumbre.
+
+    \item \textbf{Imposibilidad de incorporar circuitos nuevos sin reentrenamiento.} El sistema está, por construcción, planteado para predecir el ritmo en regímenes ya observados: el circuito es un \textit{embedding} categórico aprendido del histórico, los perfiles paramétricos se ajustan por piloto-circuito-compuesto y la envoltura empírica (\ref{ssec:envoltura_circuito}) se deriva del propio circuito. Un trazado nuevo deja sin anclaje a los tres componentes y exige acumular vueltas y reentrenar. Las arquitecturas que regularizan mejor el régimen de muestra reducida y la cuantificación de incertidumbre recogidas en \ref{ssec:extensiones_modelo} atacan el mismo problema desde el lado del modelo.
+
+    \item \textbf{Ausencia de información de carrera en tiempo real.} El motor opera \textit{a priori}, con la información previa al semáforo verde, y no reacciona a la entrada efectiva del \textit{safety car} (más allá del muestreo Bernoulli del Motor~2), a las banderas amarillas ni al comportamiento real de los rivales. La solución estructural pasa por la pestaña \textit{Live} recogida en \ref{ssec:evolucion_sistema}.
+
+    \item \textbf{Sobreajuste residual de los perfiles paramétricos.} Los coeficientes OLS del perfil de degradación pueden caer fuera del rango físicamente admisible en combinaciones piloto-circuito-compuesto poco representadas. La envoltura de validez (\ref{ssec:envoltura_circuito}) los acota a posteriori, con efecto medible (la dispersión entre pilotos del tiempo total cae de \SI{8343}{\second} a \SI{375}{\second} en Sakhir 2023), pero no resuelve el sobreajuste de raíz. \ref{ssec:extensiones_modelo} lo ataca con arquitecturas que regularizan mejor el régimen de muestra reducida.
+
+    \item \textbf{Dinámica de tráfico modelada como ruido.} La interacción competitiva entre pilotos (\textit{undercut}, \textit{overcut}, lucha por DRS, defensa) se reduce hoy a un componente de ruido gaussiano sobre el \textit{rollout}, y las pérdidas reales por tráfico no se capturan como tales. Su modelado explícito desde teoría de juegos y aprendizaje por refuerzo multiagente queda recogido en \ref{ssec:evolucion_sistema}.
+
+    \item \textbf{Pestañas Live y Rewatch no implementadas.} El prototipo cubre solo el caso de uso \textit{Pre-race}. Las dos pestañas restantes aparecen en la barra de navegación como espacios reservados; su cierre constituye la primera línea de trabajo futuro a largo plazo descrita en \ref{ssec:evolucion_sistema}.
+
+    \item \textbf{Ingestión bloqueante y caché sin políticas de expulsión.} El cliente HTTP de \textit{OpenF1} es síncrono y la caché en memoria del API no implementa expulsión por tamaño. No resulta problemático en el rango de datos manejado, pero limita la operación a escala de campeonato continuo; el paso a primitivas asíncronas y políticas de expulsión por TTL y tamaño se recoge en \ref{ssec:mejoras_corto}.
+\end{enumerate}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Trabajo futuro}
@@ -43,33 +84,20 @@
 \subsection{Mejoras a corto plazo}
 \label{ssec:mejoras_corto}
 
-% - Migrar el cliente HTTP a httpx.AsyncClient para I/O no bloqueante.
-% - Derivar pit_loss de los tiempos de parada en boxes (pit_out_time).
-% - Derivar P(SC) de counts históricos de mensajes de race control.
-% - Implementar caché TTLCache de cachetools en lugar del dict sin límite.
-% - Añadir logging estructurado (structlog, JSON lines).
-
-\todo{Escribir subsección de mejoras a corto plazo.}
+A corto plazo, varias mejoras incrementales cierran las limitaciones operacionales identificadas en \ref{sec:limitaciones}. La estimación de la pérdida de \textit{pit} y de la probabilidad de \textit{safety car} debe derivarse de manera más fina a partir de los tiempos reales de parada y de los mensajes de dirección de carrera, en lugar de los respaldos numéricos actualmente acotados. El cliente HTTP de ingesta debe migrar a primitivas asíncronas para evitar el bloqueo del proceso durante descargas largas. La caché en memoria debe ganar políticas de expulsión por TTL y por tamaño, y el sistema de trazas debe pasar a un formato estructurado que facilite la observabilidad en despliegues más exigentes.
 
 \subsection{Extensiones del modelo}
 \label{ssec:extensiones_modelo}
 
-% - Incorporar más temporadas (2024, 2025) cuando OpenF1 las incluya.
-% - Explorar variantes ligeras del Transformer (Linformer, Performer) para reducir coste.
-% - Explorar N-BEATS o PatchTST como baseline temporal alternativo.
-% - Integrar modelos fundacionales de series temporales como TimesFM.
-% - Modelar el undercut/overcut con un modelo de tráfico explícito.
-% - Añadir cuantificación de incertidumbre.
+A medio plazo, el modelo de ritmo admite tres direcciones de expansión. Primero, incorporar más temporadas a medida que estén disponibles, con especial atención al solapamiento entre años para amortiguar la deriva temporal observada en la evaluación de 2025. Con esto se deberá tener mucho cuidado, ya que el \needcite{cambio de normativa técnica de F1 a partir de 2026 (FIA)} hace que se empiece prácticamente de cero en términos de datos históricos, y que la ventana de entrenamiento se reduzca drásticamente. En parte por esto se ha decidido no incluir datos posteriores a 2025, y abarcar únicamente la generación de monoplazas de Fórmula~1 de efecto suelo (\textit{ground effect}) vigente desde 2022 hasta 2025 \needcite{reglamento técnico FIA 2022}.
 
-\todo{Escribir subsección de extensiones del modelo.}
+Segundo, explorar variantes ligeras de la arquitectura Transformer (\needcite{Linformer}, \needcite{Performer}) y de modelos especializados en series temporales (\needcite{N-BEATS}, \needcite{PatchTST}), así como la integración de modelos fundacionales tipo \needcite{TimesFM} como base para \textit{transfer learning}. Tercero, añadir una capa explícita de cuantificación de incertidumbre, mediante \needcite{\textit{dropout} bayesiano (Gal y Ghahramani)} o un \textit{ensemble} de cabezas, que ofrezca al usuario no solo la estrategia recomendada sino una banda de confianza sobre el tiempo esperado.
 
 \subsection{Evolución del sistema}
 \label{ssec:evolucion_sistema}
 
-% - Implementar las pestañas Live y Rewatch del frontend.
-% - Modelar interacciones estratégicas entre pilotos.
-% - Multi-agent RL para estrategias competitivas.
-% - Despliegue en cloud (Docker + Kubernetes).
-% - Integrar datos de otras categorías (F2, Formula-E) para transfer learning.
+A más largo plazo, el sistema completo admite tres líneas de desarrollo. La primera es la implementación de las pestañas Live y Rewatch del cliente, que cierra el alcance del producto previsto en el diseño original. Lo ideal sería tener un dashboard, similar a lo que vemos en la pestaña Pre-race, pero con información de carrera en tiempo real (posiciones, tiempos de vuelta, mensajes de dirección de carrera) y un elemento que indique si en ese momento se debe parar, según el contexto de la carrera (lluvia, safety car, tráfico) y el estado del piloto (tiempo de vuelta, ritmo, degradación). 
 
-\todo{Escribir subsección de evolución del sistema.}
+La segunda es el modelado explícito de las interacciones estratégicas entre pilotos. Desde la \needcite{teoría de juegos (Osborne y Rubinstein; Fudenberg y Tirole)}, cada equipo decide paradas con información parcial sobre rivales (estado de neumático, combustible, tráfico) y la utilidad depende de las decisiones ajenas. Para duelos uno a uno puede usarse un \needcite{juego bayesiano estático (Harsanyi)}; para líder y perseguidor, un enfoque tipo \needcite{Stackelberg} resulta más adecuado. A escala de campeonato, el juego se repite y las reputaciones de los equipos pueden integrarse como priors. En la práctica esto se traduce en modelos de tráfico que cuantifican la pérdida por seguir a un rival o, de forma escalable, en \needcite{aprendizaje por refuerzo multiagente (Busoniu \textit{et al.})} para obtener políticas de equilibrio en simulaciones completas.
+
+La tercera es el despliegue del sistema sobre infraestructura en la nube con orquestación de contenedores, y la incorporación de datos de otras categorías de monoplazas (F2, Fórmula~E) como base de \textit{transfer learning} hacia la propia Fórmula~1.

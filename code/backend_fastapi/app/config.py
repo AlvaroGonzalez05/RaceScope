@@ -172,6 +172,38 @@ SC_PROBABILITY_FALLBACK = 0.20
 SC_PROBABILITY_MIN = 0.05
 SC_PROBABILITY_MAX = 0.55
 
+# Pace sanity envelopes (driver_profile OLS can overfit on noisy stints; without
+# these caps a single bad coefficient propagates into expected_time and the UI
+# shows wildly different race durations across drivers at the same circuit).
+# Real-world F1 thermal sensitivity is ≈0.05–0.15 s/°C with typical ΔT ≤ 15 °C →
+# legitimate correction stays ≤ 2 s; the clamp at 3 s leaves margin for unusual
+# venues while killing the 100+ s artefacts seen in the baseline diagnostic.
+TEMP_CORR_CLAMP_S = 3.0
+
+# Per-driver pace_base and the per-lap predicted curve are clamped to a window
+# derived from the *actual* historical race-lap distribution at the circuit
+# (Q5/Q50/Q90). This is ground-truth data from the gold parquet, completely
+# decoupled from the DriverProfile OLS fit which has been observed to be
+# polluted by qualifying laps and in/out laps. Without this clamp a single
+# overfit `base` intercept (e.g. 188 s for SOFT in 2023 Sakhir) flows straight
+# into the per-lap curve and inflates expected_time by 30+ minutes.
+#
+# pace_base (fresh-tyre pace) → [fast * PACE_BASE_LO_FACTOR, median * PACE_BASE_HI_FACTOR]
+PACE_BASE_LO_FACTOR = 0.99
+PACE_BASE_HI_FACTOR = 1.02
+# per-lap on `curves` (allowed to span fresh→worn within the race envelope)
+PACE_LAP_LO_FACTOR = 0.98
+PACE_LAP_HI_FACTOR = 1.10
+
+# Final sanity envelope for the total race time, anchored to
+# `total_laps · circuit_median_lap_time + n_stops · pit_loss`. Real F1 race
+# winners run within ≈98 % of the field median pace; backmarkers losing a lap
+# (~90 s, ~1.6 %) are still within 4 % of median. The clamp keeps the UI
+# defensible without dropping legitimate driver-quality variation.
+EXPECTED_TIME_LO_FACTOR = 0.985
+EXPECTED_TIME_HI_FACTOR = 1.04
+EXPECTED_TIME_SC_MARGIN_S = 60.0
+
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     "http://localhost,http://127.0.0.1,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000",

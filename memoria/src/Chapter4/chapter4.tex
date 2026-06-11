@@ -16,27 +16,22 @@ El pipeline de datos transforma los registros brutos de OpenF1 en una \textit{fe
 \subsection{Ingestión de datos}
 \label{ssec:ingestion}
 
-La ingestión descarga, para cada año solicitado, los datos de las sesiones de carrera (Grand Prix), sprint y segundo entrenamiento libre (FP2), que son las que aportan el volumen de vueltas en condiciones de degradación real necesario para el entrenamiento. Para cada sesión se consultan cuatro endpoints: \texttt{/v1/laps}, \texttt{/v1/stints}, \texttt{/v1/weather} y \texttt{/v1/drivers}.
+La ingestión descarga, para cada año solicitado, los datos de las sesiones de carrera (Grand Prix), sprint y segundo entrenamiento libre (FP2), que son las que aportan el volumen de vueltas en condiciones de degradación real necesario para el entrenamiento. De cada sesión se recuperan cuatro tipos de información: vueltas, stints y compuestos, pilotos y condiciones meteorológicas.
 
-El cliente HTTP implementa dos mecanismos de control de flujo esenciales para operar con la API de OpenF1 sin violar sus límites de tasa. El primero es un \textbf{token bucket} que regula el ritmo sostenido a 60 peticiones por minuto con un intervalo mínimo entre peticiones de 0.167~s. El segundo es un mecanismo de \textbf{reintento con \textit{backoff} exponencial}: ante errores transitorios (429 o 5xx), el cliente espera $2^n$ segundos antes de reintentar, con un máximo de 5 intentos. La idempotencia está garantizada: si los cuatro ficheros Parquet de una sesión ya existen en disco, ésta se omite en ejecuciones posteriores, permitiendo reanudar ingestiones interrumpidas sin duplicar datos.
+El cliente HTTP implementa dos mecanismos de control de flujo para operar con la API de OpenF1 dentro de sus límites de tasa. El primero es un \textbf{token bucket} que regula el ritmo sostenido a 60 peticiones por minuto con un intervalo mínimo entre peticiones de 0.167~s. El segundo es un \textbf{reintento con \textit{backoff} exponencial}: ante errores transitorios (429 o 5xx), el cliente espera $2^n$ segundos antes de reintentar, con un máximo de 5 intentos. La ingestión de sesiones ya descargadas se omite en ejecuciones posteriores, lo que permite reanudar ingestiones interrumpidas sin duplicar datos.
 
-Los datos se persisten en una jerarquía de directorios particionada:
-\begin{center}
-\path{data/raw/year={YYYY}/session_key={key}/{laps,stints,weather,drivers}.parquet}
-\end{center}
-
-El uso del formato \needcite{Apache Parquet}, un formato columnar optimizado para consultas analíticas con compresión integrada, permite cargar únicamente las columnas necesarias en cada fase del pipeline, reduciendo significativamente el uso de memoria en el preprocesamiento.
+Los datos se persisten en disco en una jerarquía particionada por temporada y sesión. El uso del formato \needcite{Apache Parquet}, un formato columnar optimizado para consultas analíticas con compresión integrada, permite cargar únicamente las columnas necesarias en cada fase del pipeline, reduciendo el uso de memoria en el preprocesamiento.
 
 \subsection{Preprocesamiento e ingeniería de características}
 \label{ssec:preprocessing}
 
 El preprocesamiento unifica los datos de vueltas, stints y meteorología en una única tabla de características por año. Las transformaciones principales son:
 
-\textbf{Fusión de vueltas y stints.} Cada vuelta se asocia a su stint correspondiente mediante la clave (\texttt{driver\_number}, \texttt{stint\_number}). Si el campo \texttt{stint\_number} no está disponible en la tabla de vueltas, se aplica una unión por solapamiento de intervalos usando las columnas \texttt{lap\_start} y \texttt{lap\_end} del endpoint de stints.
+\textbf{Fusión de vueltas y stints.} Cada vuelta se asocia a su stint correspondiente mediante el par (piloto, número de stint). Si el número de stint no está disponible directamente, se aplica una unión por solapamiento a partir de los rangos de vuelta inicial y final de cada stint.
 
-\textbf{Cálculo de la edad del stint (\textit{stint\_age}).} Para cada vuelta se calcula su posición relativa dentro del stint activo: $\textit{stint\_age} = \textit{lap\_number} - \textit{lap\_start} + 1$. Esta variable captura directamente el estado de desgaste del neumático en el momento de la vuelta.
+\textbf{Cálculo de la edad del stint.} Para cada vuelta se calcula su posición relativa dentro del stint activo: $\text{edad\_de\_stint} = \text{vuelta\_actual} - \text{vuelta\_inicial} + 1$. Esta variable captura directamente el estado de desgaste del neumático en el momento de la vuelta.
 
-\textbf{Canonicalización del identificador de circuito.} Los nombres de circuito provistos por OpenF1 pueden variar entre temporadas. El preprocesador aplica un mapa canónico de nombres cortos a identificadores normalizados (p.ej., \texttt{"sakhir"} → \texttt{"Sakhir"}), con \textit{fallback} a conversión en \textit{title case}.
+\textbf{Canonicalización del identificador de circuito.} Los nombres de circuito provistos por OpenF1 pueden variar entre temporadas. El preprocesador aplica un mapa canónico de nombres cortos a identificadores normalizados (p.ej., «sakhir» a «Sakhir»), con \textit{fallback} a conversión en mayúsculas si el circuito no está en el mapa.
 
 \textbf{Imputación de temperaturas.} Los valores ausentes de temperatura de pista o de aire se imputan con la media de la sesión correspondiente, preservando la coherencia de la secuencia temporal sin introducir valores extremos.
 
@@ -72,15 +67,11 @@ El Transformer recibe quince características continuas por vuelta, tres campos 
 \end{tabularx}
 \end{table}
 
-Las características categóricas \texttt{compound\_int}, \texttt{lap\_type\_int} y \texttt{session\_type\_int} se proyectan mediante embeddings entrenables (24, 8 y 8 dimensiones respectivamente) que se concatenan al vector continuo. El identificador estático de circuito utiliza un embedding de 48 dimensiones, replicado a lo largo de la ventana; el del compuesto activo se reserva para la compuerta multiplicativa y aporta 24 dimensiones adicionales.
+Las tres características categóricas (compuesto, tipo de vuelta y tipo de sesión) se proyectan mediante embeddings entrenables de 24, 8 y 8 dimensiones, respectivamente, y se concatenan al vector continuo. El identificador estático de circuito utiliza un embedding de 48 dimensiones replicado a lo largo de la ventana; el del compuesto activo se reserva para la compuerta multiplicativa y aporta 24 dimensiones adicionales.
 
 La variable objetivo principal es el delta normalizado del tiempo de vuelta respecto a la mediana del stint, en \textit{z-score} global. La normalización \textit{z-score} se prefiere a la min-max porque los tiempos de vuelta presentan colas pesadas (pit-out, safety car) que la min-max amplificaría, y porque el entrenamiento es más estable cuando la variable objetivo tiene varianza unitaria.
 
-La tabla de características resultante, junto con los ficheros de metadatos de pilotos, equipos y circuitos por temporada, se almacena en:
-\begin{center}
-\texttt{data/gold/year=\{YYYY\}/features.parquet} \\
-\texttt{data/gold/metadata/\{drivers,teams,circuits\}\_\{YYYY\}.parquet}
-\end{center}
+La tabla de características resultante se mantiene junto con los metadatos de pilotos, equipos y circuitos correspondientes a cada temporada, lista para alimentar el entrenamiento del Transformer y la inferencia del motor de estrategia.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Modelo de predicción de tiempos de vuelta}
@@ -94,14 +85,14 @@ El modelo de predicción de tiempos de vuelta resuelve un problema de \textbf{re
 El modelo es un \needcite{encoder Transformer Pre-LN} entrenado de forma específica por piloto. Su arquitectura se organiza en cinco bloques:
 
 \begin{enumerate}
-    \item \textbf{Embeddings categóricos por paso temporal.} Los tres identificadores discretos (\texttt{compound\_int}, \texttt{lap\_type\_int} y \texttt{session\_type\_int}) se proyectan a embeddings de 24, 8 y 8 dimensiones, respectivamente. El identificador de circuito, estático por secuencia, aporta un embedding adicional de 48 dimensiones replicado a lo largo de la ventana.
+    \item \textbf{Embeddings categóricos por paso temporal.} Los tres identificadores discretos del paso temporal (compuesto, tipo de vuelta y tipo de sesión) se proyectan a embeddings de 24, 8 y 8 dimensiones, respectivamente. El identificador de circuito, estático por secuencia, aporta un embedding adicional de 48 dimensiones replicado a lo largo de la ventana.
     \item \textbf{Proyección dual a $d_\text{model}$.} El vector de 15 características continuas se proyecta linealmente a $\mathbb{R}^{d_\text{model}/2}$, y el vector concatenado de embeddings categóricos a otro $\mathbb{R}^{d_\text{model}/2}$. Ambos se concatenan para formar la representación de dimensión completa $d_\text{model} = 384$.
     \item \textbf{Compuerta multiplicativa circuito\,$\times$\,compuesto.} Los embeddings estáticos del circuito y del compuesto activo se concatenan y proyectan a un vector de $d_\text{model}$ dimensiones, sobre el que se aplica una normalización por capa y una sigmoide. El resultado actúa como compuerta multiplicativa que reescala cada dimensión del modelo en función del par activo. La inicialización con LayerNorm + sigmoide hace que el factor de modulación parta de un valor neutro próximo a 0.5 y se especialice progresivamente durante el entrenamiento.
     \item \textbf{Codificación posicional y encoder.} Tras una normalización de capa inicial, se añade una codificación posicional aprendida sobre las 40 posiciones, y la secuencia atraviesa un encoder de 8 capas Pre-LN con 8 cabezas de atención y red feed-forward interna de 1\,536 unidades.
     \item \textbf{Cuatro cabezas de salida.} Se toma la representación del último paso temporal $\mathbf{h}_T \in \mathbb{R}^{d_\text{model}}$ y se proyecta linealmente a cuatro escalares: el delta normalizado de la vuelta siguiente (cabeza principal, entrenada con pérdida de Huber), el tiempo absoluto normalizado, la tasa de degradación instantánea y el coste remanente del stint (las tres últimas como cabezas auxiliares, entrenadas con MSE).
 \end{enumerate}
 
-La arquitectura resultante acumula aproximadamente \num{14.3e6} parámetros, dominados por el bloque de atención multi-cabeza. El conjunto de pesos por piloto se serializa en formato \textit{joblib} y ocupa del orden de \SI{56}{MB}.
+La arquitectura resultante acumula aproximadamente \num{14.3e6} parámetros, dominados por el bloque de atención multi-cabeza. El conjunto de pesos por piloto se serializa en disco y ocupa del orden de \SI{56}{MB}.
 
 \subsection{Estrategia de entrenamiento y modelos de fallback}
 \label{ssec:entrenamiento_fallback}
@@ -134,28 +125,28 @@ La inferencia denormaliza el delta predicho y lo añade a la mediana de referenc
 \subsection{Evolución del modelo: del LSTM al Transformer v3}
 \label{ssec:evolucion_transformer}
 
-La configuración descrita en \ref{ssec:arquitectura_transformer} es la cuarta iteración de una familia de modelos de predicción de ritmo que comenzó con una red recurrente por piloto. Cada salto resuelve una limitación concreta de la versión anterior; las variantes intermedias permanecen en el código como rutas de respaldo para joblibs heredados.
+La configuración descrita en \ref{ssec:arquitectura_transformer} es la cuarta iteración de una familia de modelos de predicción de ritmo que comenzó con una red recurrente por piloto. Cada salto resuelve una limitación concreta de la versión anterior; las variantes intermedias se conservan como ruta de respaldo para los modelos serializados de versiones anteriores.
 
 \begin{itemize}
-    \item \textbf{LSTM (línea base).} Red recurrente \needcite{Long Short-Term Memory} entrenada por piloto sobre el mismo \textit{feature store}. Capturaba la pendiente media de degradación, pero el estado oculto se saturaba en stints largos y apenas reaccionaba al embedding categórico de compuesto. Se conserva como ruta de respaldo (\texttt{LSTMPaceModel}) para joblibs serializados sin campo \texttt{model\_type}.
+    \item \textbf{LSTM (línea base).} Red recurrente \needcite{Long Short-Term Memory} entrenada por piloto sobre el mismo \textit{feature store}. Capturaba la pendiente media de degradación, pero el estado oculto se saturaba en stints largos y apenas reaccionaba al embedding categórico de compuesto. Se conserva como ruta de respaldo para modelos serializados de versiones anteriores.
 
     \item \textbf{Transformer v1} ($d_\text{model} = 32$, 2 capas, 4 cabezas, ventana de 15 vueltas, una cabeza de salida, $\approx \num{26500}$ parámetros). Prueba de concepto que validó la viabilidad de un encoder de atención sobre el volumen de datos disponible. El modelo aprendía la curva de degradación media pero no distinguía entre pilotos: el embedding categórico no se traducía en pendientes de degradación diferenciadas.
 
     \item \textbf{Transformer v2} ($d_\text{model} = 256$, 6 capas, 8 cabezas, ventana de 25 vueltas, tres cabezas de salida y término aditivo de circuito, $\approx \num{4.76e6}$ parámetros). Las cabezas auxiliares de tiempo absoluto y tasa de degradación regularizan la representación. El término de circuito se proyecta desde su embedding estático a $\mathbb{R}^{d_\text{model}}$ y se suma a cada paso temporal antes del encoder, $\mathbf{x}_t \leftarrow \mathbf{x}_t + \mathbf{b}_\text{circ}$, sesgando el delta predicho hacia el ritmo típico de cada trazado. El MAE de validación del modelo común se situó en \num{0.107} sobre el conjunto de entrenamiento de mayo de 2026. La inyección aditiva resultó insuficiente frente a la interacción real circuito\,$\times$\,compuesto: un desplazamiento constante de la representación no permite atenuar dimensiones irrelevantes para una combinación dada, y la diferencia entre un compuesto duro y uno blando no admite una traducción lineal entre trazados.
 
-    \item \textbf{Transformer v3} ($d_\text{model} = 384$, 8 capas, 8 cabezas, ventana de 40 vueltas, cuatro cabezas de salida, $\approx \num{14.3e6}$ parámetros). Sustituye el término aditivo por la compuerta multiplicativa descrita en \ref{ssec:arquitectura_transformer}, que reescala la representación mediante un vector sigmoidal aprendido del par (circuito, compuesto) y permite amplificar o atenuar dimensiones de forma independiente. Amplía el contexto al rango habitual de un stint de carrera, incorpora la característica \texttt{stint\_number\_norm} para distinguir el comportamiento entre stints sucesivos y añade la cabeza de coste remanente, que el Motor~1 reutiliza en el filtro de rentabilidad por parada. El \textit{dropout} se fija en cero de forma deliberada: la generalización se obtiene por separación de modelos entre pilotos, no por regularización dentro de cada uno.
+    \item \textbf{Transformer v3} ($d_\text{model} = 384$, 8 capas, 8 cabezas, ventana de 40 vueltas, cuatro cabezas de salida, $\approx \num{14.3e6}$ parámetros). La iteración más ambiciosa. Sustituye el término aditivo por la compuerta multiplicativa descrita en \ref{ssec:arquitectura_transformer}, que reescala la representación mediante un vector sigmoidal aprendido del par (circuito, compuesto) y permite amplificar o atenuar dimensiones de forma independiente. Amplía el contexto al rango habitual de un stint de carrera, incorpora la característica \texttt{stint\_number\_norm} para distinguir el comportamiento entre stints sucesivos y añade la cabeza de coste remanente, que el Motor~1 reutiliza en el filtro de rentabilidad por parada. El \textit{dropout} se fija en cero de forma deliberada: la generalización se obtiene por separación de modelos entre pilotos, no por regularización dentro de cada uno.
 \end{itemize}
 
-En paralelo a la transición de v2 a v3, el \textit{rollout} autoregresivo del Motor~2 pasó de procesar las simulaciones de Monte Carlo de manera secuencial a tratarlas como un \textit{batch} compartido en el encoder. La implementación de \texttt{TransformerEncoder} en PyTorch admite una dimensión de \textit{batch} arbitraria sin necesidad de modificar la arquitectura. La latencia por petición de \texttt{/api/strategy} pasó del orden de minutos al de segundos, lo que permitió asumir el coste de la arquitectura más grande sin penalizar el tiempo de respuesta del API.
+En paralelo a la transición de v2 a v3, el \textit{rollout} autoregresivo del Motor~2 pasó de procesar las simulaciones de Monte Carlo de manera secuencial a tratarlas como un \textit{batch} compartido en el encoder. La implementación de PyTorch del encoder Transformer admite una dimensión de \textit{batch} arbitraria sin necesidad de modificar la arquitectura. La latencia por petición de estrategia pasó del orden de minutos al de segundos, lo que permitió asumir el coste de la arquitectura más grande sin penalizar el tiempo de respuesta del API.
 
 La Tabla~\ref{tab:evolucion_transformer} resume las dimensiones comparables de las tres variantes del Transformer. La v3 es la configuración vigente en \textit{RaceScope}: minimiza el MAE de validación sobre el conjunto de pilotos con datos suficientes y es la que se asume en el resto del capítulo.
 
-\begin{table}[htbp]
+\begin{table*}[htbp]
 \centering
 \caption{Resumen comparativo de las tres variantes del Transformer de predicción de ritmo.}
 \label{tab:evolucion_transformer}
 \small
-\begin{tabular}{lrrr}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lrrr}
 \toprule
  & \textbf{v1} & \textbf{v2} & \textbf{v3} \\
 \midrule
@@ -168,8 +159,8 @@ Cabezas de salida                           & 1                        & 3      
 Modulación de circuito                      & ---                      & aditiva                   & multiplicativa \\
 Parámetros                                  & $\approx \num{26500}$    & $\approx \num{4.76e6}$    & $\approx \num{14.3e6}$ \\
 \bottomrule
-\end{tabular}
-\end{table}
+\end{tabular*}
+\end{table*}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Modelo paramétrico de perfil de piloto}
@@ -197,7 +188,7 @@ La elección de un modelo lineal, frente a modelos de mayor orden o de espacio d
 Para cada solicitud de ritmo, el sistema resuelve los parámetros del perfil siguiendo una jerarquía de cuatro niveles, del más específico al más general:
 
 \begin{enumerate}
-    \item \textbf{Circuito + compuesto}: perfil del piloto en ese circuito y compuesto, si hay al menos 40 vueltas disponibles.
+    \item \textbf{Circuito $+$ compuesto}: perfil del piloto en ese circuito y compuesto, si hay al menos 40 vueltas disponibles.
     \item \textbf{Compuesto del piloto}: perfil sobre todas las vueltas del piloto con ese compuesto (todos los circuitos), si hay al menos 120 vueltas.
     \item \textbf{Compuesto global}: perfil sobre todas las vueltas de todos los pilotos con ese compuesto, como referencia del comportamiento genérico del compuesto.
     \item \textbf{Valores de seguridad}: $\beta_0 = 90~\si{\second}$, $\beta_1 = 0.05~\si{\second/vuelta}$, $\beta_2 = \beta_3 = 0$. Este nivel garantiza que el motor nunca produce errores numéricos por falta de datos.
@@ -205,7 +196,7 @@ Para cada solicitud de ritmo, el sistema resuelve los parámetros del perfil sig
 
 \needcite{Esta estructura es análoga a los modelos lineales jerárquicos: el perfil global actúa como prior implícito del comportamiento de un piloto genérico}. El entrenamiento de perfiles requiere un mínimo de 160 vueltas por piloto.
 
-El nivel~4 admite, de forma opcional, una sobreescritura del ritmo base mediante un parámetro \texttt{circuit\_baseline} calculado en tiempo de consulta como la mediana de las vueltas de carrera del circuito para el compuesto solicitado (ecuación~\ref{eq:envelope_lap}). Cuando el llamante lo proporciona, sustituye al literal $\beta_0 = 90~\si{\second}$ por un valor coherente con la dinámica real del trazado. Este mecanismo se activa únicamente cuando el dataset no contiene muestra suficiente para entrenar perfiles a los niveles 1 a~3; en los circuitos presentes en el conjunto actual no se utiliza, pero queda disponible ante la incorporación futura de venues nuevos o pilotos con historial corto.
+El nivel~4 admite, de forma opcional, una sobreescritura del ritmo base con la mediana de las vueltas de carrera del circuito para el compuesto solicitado (ecuación~\ref{eq:envelope_lap}). Cuando está disponible, sustituye al literal $\beta_0 = 90~\si{\second}$ por un valor coherente con la dinámica real del trazado. Este mecanismo se activa únicamente cuando el dataset no contiene muestra suficiente para entrenar perfiles a los niveles 1 a~3; en los circuitos presentes en el conjunto actual no se utiliza, pero queda disponible ante la incorporación futura de trazados nuevos o pilotos con historial corto.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Motor de estrategia: tres motores que colaboran}
@@ -216,9 +207,9 @@ El motor de estrategia recibe el contexto de una carrera (año, circuito, piloto
 \subsection{Contexto de carrera}
 \label{ssec:race_context}
 
-Antes de la evaluación, el motor construye un \texttt{RaceContext} con los parámetros empíricos de la carrera: número total de vueltas (máximo \texttt{lap\_number} histórico), temperaturas medias de pista y aire (media de los registros de \texttt{/v1/weather} durante la sesión), pérdida de pit stop y probabilidad de safety car.
+Antes de la evaluación, el motor construye un contexto de carrera con los parámetros empíricos de la sesión: número total de vueltas (máximo histórico observado), temperaturas medias de pista y aire (media de los registros meteorológicos de la sesión), pérdida de pit stop y probabilidad de safety car.
 
-La \textbf{pérdida de pit stop} se estima como la diferencia media entre el tiempo de la primera vuelta de un stint y el tiempo esperado sin parada, acotada entre 15 y 45~s (constantes \texttt{PIT\_LOSS\_MIN} y \texttt{PIT\_LOSS\_MAX}). El \textit{fallback} cuando no hay datos suficientes es 22.5~s, coherente con los tiempos históricos en F1.
+La \textbf{pérdida de pit stop} se estima como la diferencia media entre el tiempo de la primera vuelta de un stint y el tiempo esperado sin parada, acotada entre 15 y 45~s. El \textit{fallback} cuando no hay datos suficientes es 22.5~s, coherente con los tiempos históricos en F1.
 
 La \textbf{probabilidad de safety car} se estima como la fracción de vueltas en las que el tiempo de vuelta supera en más de un 35\% el tiempo típico de la sesión. El \textit{fallback} es $P_{\text{SC}} = 0.20$, acotado entre 0.05 y 0.55.
 
@@ -257,7 +248,7 @@ A continuación, el Motor 1 aplica un \textbf{filtro de rentabilidad}: para cada
 
 \subsection{Motor 2: Refinamiento Monte Carlo con el Transformer}
 \label{ssec:motor2}
-Las $K = 3$ mejores candidatas según el orden analítico (constante \texttt{MC\_TOP\_K}) se someten a una simulación Monte Carlo con $N_\text{sim} = 100$ rollouts por candidata. Cada rollout simula una realización aleatoria de la carrera con cuatro componentes estocásticas:
+Las $K = 3$ mejores candidatas según el orden analítico se someten a una simulación Monte Carlo con $N_\text{sim} = 100$ rollouts por candidata. Cada rollout simula una realización aleatoria de la carrera con cuatro componentes estocásticas:
 
 \begin{enumerate}
     \item \textbf{Distribución de intención de ritmo.} Se muestrean dos valores, ritmo de ataque y ritmo de conservación, de la distribución empírica construida a partir de los entrenamientos libres del piloto, y se interpolan vuelta a vuelta para alimentar al Transformer.
@@ -281,30 +272,30 @@ El Motor 3 produce el orden final entregado al usuario. Sobre cada candidata, ta
     \label{eq:risk_score_cap4}
 \end{equation}
 
-con $\lambda = 0.15$ por defecto (constante \texttt{DEFAULT\_RISK\_LAMBDA}). \needcite{La formulación es la adaptación directa del marco de cartera de Markowitz al dominio de la estrategia de carrera}: la varianza se trata como riesgo a controlar, no como ruido residual a ignorar.
+con $\lambda = 0.15$ por defecto. \needcite{La formulación es la adaptación directa del marco de cartera de Markowitz al dominio de la estrategia de carrera}: la varianza se trata como riesgo a controlar, no como ruido residual a ignorar.
 
 Antes de devolver el resultado al usuario, el Motor 3 aplica tres operaciones de presentación:
 
 \begin{itemize}
-    \item \textbf{Agrupación por ventanas de pit.} Las vueltas de pit se discretizan en cubos de 5 vueltas (\texttt{PIT\_WINDOW\_BIN}~$= 5$). Si dos candidatas comparten cubo de pit en todas sus paradas, se considera que representan la misma decisión estratégica y solo se conserva la de menor \textit{risk score}.
-    \item \textbf{Exclusión de arranques con HARD.} Las estrategias que arrancan con compuesto duro se filtran del payload final. La práctica competitiva en F1 hace que ese arranque sea inviable salvo en circunstancias específicas que el sistema no modela.
+    \item \textbf{Agrupación por ventanas de pit.} Las vueltas de pit se discretizan en cubos de 5 vueltas. Si dos candidatas comparten cubo de pit en todas sus paradas, se considera que representan la misma decisión estratégica y solo se conserva la de menor \textit{risk score}.
+    \item \textbf{Exclusión de arranques con HARD.} Las estrategias que arrancan con compuesto duro se filtran del resultado final. La práctica competitiva en F1 hace que ese arranque sea inviable salvo en circunstancias específicas que el sistema no modela.
     \item \textbf{Sesgo suave hacia MEDIUM.} Las estrategias que arrancan con compuesto medio reciben una penalización aditiva de 1~s en su puntuación final, suficiente para no aparecer como primera opción salvo cuando la ventaja analítica es clara.
 \end{itemize}
 
-Tras estas operaciones se devuelven las $N_\text{strat} = 5$ mejores estrategias (constante \texttt{DEFAULT\_STRATEGY\_COUNT}), cada una acompañada de sus stints, vueltas de pit, ventanas de pit, tiempo esperado, varianza, \textit{risk score} y curvas de ritmo proyectadas por el Transformer. La semilla aleatoria fija (\texttt{RANDOM\_SEED}~$= 42$) garantiza la reproducibilidad del refinamiento Monte Carlo.
+Tras estas operaciones se devuelven las $N_\text{strat} = 5$ mejores estrategias, cada una acompañada de sus stints, vueltas de pit, ventanas de pit, tiempo esperado, varianza, \textit{risk score} y curvas de ritmo proyectadas por el Transformer. Una semilla aleatoria fija garantiza la reproducibilidad del refinamiento Monte Carlo.
 
-\subsection{Cota de validez física: envoltura del circuito y clamps de seguridad}
+\subsection{Cota de validez física: envoltura del circuito y acotaciones de seguridad}
 \label{ssec:envoltura_circuito}
 
-El modelo paramétrico de \S\ref{sec:modelo_parametrico} y el Transformer de \S\ref{sec:modelo_transformer} se entrenan a partir de datos de telemetría que mezclan vueltas de carrera limpias con vueltas in/out, neutralizaciones residuales y sesiones de práctica. Cuando el ajuste por mínimos cuadrados se aplica a una combinación piloto-circuito-compuesto con muestra reducida o con presencia de ruido estructural, los coeficientes resultantes pueden caer fuera del rango físicamente admisible. Las consecuencias se propagan, sin contención adicional, al motor de estrategia.
+El modelo paramétrico de \ref{sec:modelo_parametrico} y el Transformer de \ref{sec:modelo_transformer} se entrenan a partir de datos de telemetría que mezclan vueltas de carrera limpias con vueltas in/out, neutralizaciones residuales y sesiones de práctica. Cuando el ajuste por mínimos cuadrados se aplica a una combinación piloto-circuito-compuesto con muestra reducida o con presencia de ruido estructural, los coeficientes resultantes pueden caer fuera del rango físicamente admisible. Las consecuencias se propagan, sin contención adicional, al motor de estrategia.
 
 \subsubsection{Diagnóstico inicial}
 \label{sssec:diagnostico_spread}
 
-Para cuantificar el efecto sobre el sistema en producción, se construyó el script \texttt{scripts/diagnose\_pace\_spread.py}, que para una temporada y circuito dados recorre la totalidad de pilotos en parrilla, ejecuta el pipeline completo de \texttt{generate\_strategies} y registra el \texttt{expected\_time} de la estrategia ganadora junto con los parámetros del perfil utilizado. Sobre el Gran Premio de Baréin de 2023 (Sakhir, $L = 57$ vueltas), las observaciones agregadas mostraron:
+Para cuantificar el efecto sobre el sistema en producción se construyó una rutina diagnóstica que, para una temporada y circuito dados, recorre la totalidad de pilotos en parrilla, ejecuta el pipeline completo de generación de estrategias y registra el tiempo total esperado de la estrategia ganadora junto con los parámetros del perfil utilizado. Sobre el Gran Premio de Baréin de 2023 (Sakhir, $L = 57$ vueltas), las observaciones agregadas mostraron:
 
 \begin{itemize}
-    \item Rango de duraciones totales entre pilotos: $[57\text{:}42, 3\text{:}16\text{:}45]$, equivalente a una dispersión de \SI{139}{\minute} (\SI{8343}{\second}) en una carrera donde el spread físicamente esperable, en presencia de pilotos doblados, no supera las decenas de segundos.
+    \item Rango de duraciones totales entre pilotos: $[57\text{:}42, 3\text{:}16\text{:}45]$, equivalente a una dispersión de \SI{139}{\minute} (\SI{8343}{\second}) en una carrera donde el intervalo de tiempos físicamente esperable, en presencia de pilotos doblados, no supera las decenas de segundos.
     \item Coeficientes térmicos por OLS con magnitudes incompatibles con la sensibilidad reportada para neumáticos de F1 (rango característico $0.05$ a $0.15~\si{\second\per\celsius}$, \needcite{Pirelli technical reports}). En 53 de 60 combinaciones piloto-compuesto la corrección térmica efectiva $\beta_2 \cdot \Delta T_{\text{pista}} + \beta_3 \cdot \Delta T_{\text{aire}}$ excedía los $\pm 3~\si{\second}$.
     \item Intercepts $\beta_0$ distribuidos en el intervalo $[84, 188]~\si{\second}$ para los compuestos SOFT y MEDIUM, frente a un valor de referencia próximo a $90~\si{\second}$.
 \end{itemize}
@@ -312,7 +303,7 @@ Para cuantificar el efecto sobre el sistema en producción, se construyó el scr
 \subsubsection{Envoltura empírica del circuito}
 \label{sssec:envoltura_definicion}
 
-La solución adoptada deriva una cota de validez directamente de la distribución empírica de tiempos de vuelta de carrera del circuito, independiente de los perfiles paramétricos. La función \texttt{\_circuit\_lap\_envelope} extrae, para cada compuesto $c \in \{\text{SOFT}, \text{MEDIUM}, \text{HARD}\}$, los percentiles
+La solución adoptada deriva una cota de validez directamente de la distribución observada de tiempos de vuelta de carrera del circuito, independiente de los perfiles paramétricos. Para cada compuesto $c \in \{\text{SOFT}, \text{MEDIUM}, \text{HARD}\}$ se extraen los percentiles
 
 \begin{equation}
     \mathcal{E}_c(\text{circuit}) =
@@ -329,54 +320,54 @@ calculados sobre el conjunto de vueltas de la sesión de carrera del circuito y 
 La envoltura se aplica como cota dura en cuatro puntos del pipeline, organizados como capas concéntricas de defensa:
 
 \begin{enumerate}
-    \item \textbf{Corrección térmica acotada} (\texttt{\_apply\_temperature\_correction}). Cada uno de los términos $\beta_2 \cdot \Delta T_{\text{pista}}$ y $\beta_3 \cdot \Delta T_{\text{aire}}$ se acota individualmente al intervalo $[-\Delta_T, +\Delta_T]$ con $\Delta_T = 3~\si{\second}$ (\texttt{TEMP\_CORR\_CLAMP\_S}). El cap se sitúa por encima del rango fisiológico del compuesto pero por debajo del orden de magnitud de los coeficientes sobreajustados detectados en el diagnóstico. El helper se invoca de manera compartida desde \texttt{\_pace\_table} y desde \texttt{\_precompute\_pace\_curves}, lo que evita que ambos caminos del motor diverjan en su tratamiento de la temperatura.
+    \item \textbf{Corrección térmica acotada.} Cada uno de los términos $\beta_2 \cdot \Delta T_{\text{pista}}$ y $\beta_3 \cdot \Delta T_{\text{aire}}$ se acota individualmente al intervalo $[-\Delta_T, +\Delta_T]$ con $\Delta_T = 3~\si{\second}$. La cota se sitúa por encima del rango fisiológico del compuesto pero por debajo del orden de magnitud de los coeficientes sobreajustados detectados en el diagnóstico. El acotado se aplica tanto en la generación analítica del Motor 1 como en la precomputación de las curvas de ritmo, lo que evita que ambos caminos del motor diverjan en su tratamiento de la temperatura.
 
     \item \textbf{Acotación del ritmo base en el Motor 1.} El ritmo $\text{pace}_{\text{base}}$ resultante para cada compuesto se acota al intervalo
     \begin{equation}
         \bigl[t^{(c)}_\text{fast} \cdot \alpha_\text{lo},\; t^{(c)}_\text{median} \cdot \alpha_\text{hi}\bigr]
         \label{eq:pace_base_clamp}
     \end{equation}
-    con $\alpha_\text{lo} = 0.99$ y $\alpha_\text{hi} = 1.02$ (constantes \texttt{PACE\_BASE\_LO\_FACTOR}, \texttt{PACE\_BASE\_HI\_FACTOR}). El extremo inferior impide que un perfil produzca un ritmo más rápido que el quinto percentil histórico del circuito; el extremo superior limita los excesos del intercept a un 2~\% sobre la mediana de carrera, margen suficiente para acomodar a los pilotos legítimamente lentos del campo.
+    con $\alpha_\text{lo} = 0.99$ y $\alpha_\text{hi} = 1.02$. El extremo inferior impide que un perfil produzca un ritmo más rápido que el quinto percentil histórico del circuito; el extremo superior limita los excesos del intercept a un 2~\% sobre la mediana de carrera, margen suficiente para acomodar a los pilotos legítimamente lentos del campo.
 
-    \item \textbf{Acotación de la curva de ritmo por vuelta.} En \texttt{\_precompute\_pace\_curves} se aplica un clamp por vuelta al intervalo
+    \item \textbf{Acotación de la curva de ritmo por vuelta.} Se aplica una acotación por vuelta al intervalo
     \begin{equation}
         \bigl[t^{(c)}_\text{fast} \cdot \gamma_\text{lo},\; t^{(c)}_\text{slow} \cdot \gamma_\text{hi}\bigr]
         \label{eq:lap_clamp}
     \end{equation}
-    con $\gamma_\text{lo} = 0.98$ y $\gamma_\text{hi} = 1.10$ (\texttt{PACE\_LAP\_LO\_FACTOR}, \texttt{PACE\_LAP\_HI\_FACTOR}), tanto sobre la \textit{base series} que sirve de contexto al Transformer como sobre los tiempos que devuelve \texttt{model.predict\_stint}. El mismo clamp se aplica dentro del Motor 2 a la matriz \texttt{lap\_times\_batch} producida por los \textit{rollouts} batched de las variantes v1, v2 y v3 del Transformer, antes de su agregación. Este paso protege la suma $\sum_k t_k$ que alimenta a \texttt{\_analytical\_eval} y a \texttt{\_simulate\_strategy} frente a salidas anómalas del modelo en contextos poco representados durante el entrenamiento.
+    con $\gamma_\text{lo} = 0.98$ y $\gamma_\text{hi} = 1.10$, tanto sobre la serie base que sirve de contexto al Transformer como sobre los tiempos que devuelve el modelo. La misma acotación se aplica dentro del Motor 2 a los tiempos producidos por los \textit{rollouts} de las tres variantes del Transformer (v1, v2 y v3), antes de su agregación. Este paso protege la suma $\sum_k t_k$ que alimenta a la evaluación analítica y a la simulación de estrategias frente a salidas anómalas del modelo en contextos poco representados durante el entrenamiento.
 
-    \item \textbf{Envoltura del tiempo total.} Antes de añadir cada estrategia al payload final, el Motor 3 contrasta el \texttt{expected\_time} contra la cota
+    \item \textbf{Envoltura del tiempo total.} Antes de añadir cada estrategia al resultado final, el Motor 3 contrasta el tiempo total esperado contra la cota
     \begin{equation}
         \bigl[A \cdot \eta_\text{lo} + n_\text{stops} \cdot p_\text{loss} \cdot 0.85,\;
               A \cdot \eta_\text{hi} + n_\text{stops} \cdot p_\text{loss} \cdot 1.15 + \Delta_\text{SC}\bigr]
         \label{eq:total_clamp}
     \end{equation}
-    siendo $A = L \cdot \mathrm{median}_c\{t^{(c)}_\text{median}\}$ el anclaje a la mediana de los compuestos del circuito, $\eta_\text{lo} = 0.985$, $\eta_\text{hi} = 1.04$ y $\Delta_\text{SC} = 60~\si{\second}$ un margen para neutralizaciones (\texttt{EXPECTED\_TIME\_LO\_FACTOR}, \texttt{EXPECTED\_TIME\_HI\_FACTOR}, \texttt{EXPECTED\_TIME\_SC\_MARGIN\_S}). Cuando el valor cae fuera de la cota se acota al extremo correspondiente y se marca \texttt{expected\_time\_clamped} en el payload, además de emitirse una entrada de log \texttt{strategy\_envelope\_clamp} con el contexto completo de la candidata. Si las capas anteriores funcionan, este paso debe activarse de manera infrecuente y los warnings sirven como instrumentación para detectar regresiones de modelo o de datos.
+    siendo $A = L \cdot \mathrm{median}_c\{t^{(c)}_\text{median}\}$ el anclaje a la mediana de los compuestos del circuito, $\eta_\text{lo} = 0.985$, $\eta_\text{hi} = 1.04$ y $\Delta_\text{SC} = 60~\si{\second}$ un margen para neutralizaciones. Cuando el valor cae fuera de la cota se acota al extremo correspondiente y se marca la estrategia como acotada en el resultado, junto con un aviso en el registro de eventos que recoge el contexto completo de la candidata. Si las capas anteriores funcionan, este paso no debería activarse de manera frecuente y los avisos sirven como instrumentación para detectar regresiones de modelo o de datos.
 \end{enumerate}
 
 \subsubsection{Validación cuantitativa}
 \label{sssec:envoltura_validacion}
 
-La incorporación progresiva de los cuatro mecanismos se midió sobre el mismo escenario de referencia (Sakhir 2023, 20 pilotos) mediante reejecuciones del diagnóstico de \S\ref{sssec:diagnostico_spread}. La tabla~\ref{tab:envoltura_validacion} resume la reducción de la dispersión $\Delta T = \max_i T_i - \min_i T_i$ entre pilotos para la estrategia ganadora de cada uno:
+La incorporación progresiva de los cuatro mecanismos se midió sobre el mismo escenario de referencia (Sakhir 2023, 20 pilotos) mediante reejecuciones del diagnóstico de \ref{sssec:diagnostico_spread}. La tabla~\ref{tab:envoltura_validacion} resume la reducción de la dispersión $\Delta T = \max_i T_i - \min_i T_i$ entre pilotos para la estrategia ganadora de cada uno:
 
 \begin{table}[h]
 \centering
-\caption{Dispersión de \texttt{expected\_time} entre pilotos al introducir progresivamente los clamps. La columna $\Delta T$ es la diferencia entre el máximo y el mínimo entre los 20 pilotos de Sakhir 2023.}
+\caption{Dispersión del tiempo total esperado entre pilotos al introducir progresivamente las acotaciones. La columna $\Delta T$ es la diferencia entre el máximo y el mínimo entre los 20 pilotos de Sakhir 2023.}
 \label{tab:envoltura_validacion}
 \begin{tabular}{lrr}
 \toprule
-Configuración & $\Delta T$ (s) & Reducción vs. baseline \\
+Configuración & $\Delta T$ (s) & Reducción frente a línea base \\
 \midrule
-Baseline (sin clamps) & 8\,343 & ref. \\
+Línea base (sin acotaciones) & 8\,343 & ref. \\
 \;+\;Corrección térmica acotada       & 3\,630 & $-56~\%$ \\
 \;+\;Envoltura del Motor 1 y curvas    & 3\,029 & $-64~\%$ \\
-\;+\;Clamp en \textit{rollouts} MC     &    895 & $-89~\%$ \\
+\;+\;Acotación en \textit{rollouts} MC &    895 & $-89~\%$ \\
 \;+\;Envoltura del tiempo total        &    375 & $-95.5~\%$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-La configuración final sitúa el rango de duraciones de carrera en $[1\text{:}32\text{:}18, 1\text{:}38\text{:}33]$, con mediana $1\text{:}35\text{:}28$ y ritmo medio $100.5~\si{\second\per vuelta}$, valores coherentes con la duración real del Gran Premio de Baréin de 2023 ($1\text{:}33\text{:}56$ para el ganador, \needcite{datos oficiales FIA 2023}). Los CSV intermedios de cada fase se conservan bajo \texttt{reports/pace\_spread\_*.csv} y permiten reproducir la trazabilidad completa del análisis.
+La configuración final sitúa el rango de duraciones de carrera en $[1\text{:}32\text{:}18, 1\text{:}38\text{:}33]$, con mediana $1\text{:}35\text{:}28$ y ritmo medio $100.5~\si{\second\per vuelta}$, valores coherentes con la duración real del Gran Premio de Baréin de 2023 ($1\text{:}33\text{:}56$ para el ganador, \needcite{datos oficiales FIA 2023}).
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Métricas de evaluación}
@@ -397,11 +388,11 @@ El motor se valida comparando sus recomendaciones con las estrategias empleadas 
 \begin{itemize}
     \item \textbf{Concordancia estratégica}: fracción de carreras en que la estrategia real coincide con la mejor recomendada por el motor.
     \item \textbf{Ranking de la estrategia real}: posición media de la estrategia efectivamente usada dentro del ranking de las $N_{\text{strat}} = 5$ generadas. Una posición cercana a 1 indica buen ordenamiento.
-    \item \textbf{Análisis de sensibilidad}: variación de los rankings ante perturbaciones en $\lambda$, \textit{pit\_loss} y $P_{\text{SC}}$.
+    \item \textbf{Análisis de sensibilidad}: variación de los rankings ante perturbaciones en $\lambda$, la pérdida de pit y $P_{\text{SC}}$.
 \end{itemize}
 \subsection{Evaluación del sistema: latencia}
 \label{ssec:metricas_latencia}
-Se mide la latencia del endpoint \texttt{/api/strategy} bajo tres regímenes:
+Se mide la latencia del endpoint principal de estrategia bajo tres regímenes:
 \begin{itemize}
     \item \textbf{Latencia fría (\textit{cold})}: primera petición tras el arranque del servidor, incluyendo la carga de modelos y la construcción de curvas de ritmo desde cero.
     \item \textbf{Latencia tibia (\textit{warm})}: petición con modelos ya cargados en memoria pero curvas de ritmo no cacheadas.

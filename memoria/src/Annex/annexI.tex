@@ -5,45 +5,24 @@
 \chapter{Alineación con los Objetivos de Desarrollo Sostenible}
 \label{ann:ods}
 
-Los Objetivos de Desarrollo Sostenible (ODS) de las Naciones Unidas constituyen
-un marco global de referencia para el desarrollo sostenible hasta 2030. A
-continuación se analiza la contribución de RaceScope a los ODS más relevantes.
+Los Objetivos de Desarrollo Sostenible (ODS) de las Naciones Unidas constituyen el marco global de referencia para el desarrollo sostenible hasta 2030. Este anexo analiza la contribución de \textit{RaceScope} a los tres ODS sobre los que el sistema tiene un efecto identificable (9, 17 y 4) y cierra con una estimación de su huella computacional.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{ODS 9 — Industria, innovación e infraestructura}
 
-RaceScope contribuye al ODS 9 con una solución de inteligencia artificial
-aplicada a la industria del motorsport. El sistema combina Transformers
-entrenados por piloto y simulación Monte Carlo como herramientas de apoyo a la
-decisión estratégica, reduciendo la dependencia de soluciones propietarias y
-ampliando el acceso a analítica deportiva avanzada fuera del entorno de los
-equipos de Fórmula~1.
+\textit{RaceScope} se inscribe en el ODS~9 como una pieza de analítica aplicada al automovilismo construida sobre datos públicos y código abierto. La combinación de Transformers entrenados por piloto y simulación Monte Carlo, distribuida íntegramente como software libre, traslada al exterior del entorno de los equipos de Fórmula~1 una capacidad de apoyo a la decisión estratégica que hasta ahora dependía de soluciones propietarias y de canales de telemetría restringidos.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{ODS 17 — Alianzas para lograr los objetivos}
 
-El proyecto se construye íntegramente sobre infraestructura y datos abiertos:
-la API OpenF1 (datos gratuitos de F1), librerías open-source (PyTorch, FastAPI,
-React) y el estándar Apache Parquet. Esta apuesta por el ecosistema abierto
-fomenta la colaboración entre la comunidad académica, investigadores
-independientes y aficionados al motorsport, alineándose con el espíritu de
-alianza e intercambio de conocimiento del ODS 17.
+El proyecto se construye íntegramente sobre infraestructura y datos abiertos: la API \textit{OpenF1} como fuente gratuita de datos de Fórmula~1, librerías de uso libre para el modelo de ritmo (PyTorch), el servicio HTTP (FastAPI) y el cliente (React), y el formato \textit{Apache Parquet} como estándar de almacenamiento columnar para la \textit{feature store}. Esta elección reduce a cero la dependencia de plataformas propietarias y permite que la comunidad académica, los investigadores independientes y los aficionados al automovilismo reproduzcan, modifiquen y extiendan el sistema sin barreras de licencia. La contribución del proyecto al ODS~17 se sitúa en este plano: cada componente puede reutilizarse en proyectos derivados, y los datos y los modelos quedan accesibles a quien quiera continuar el trabajo.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{ODS 4 — Educación de calidad}
 
-Al ser un sistema completamente reproducible —con documentación del pipeline,
-código abierto y arquitectura modular—, RaceScope puede servir como recurso
-educativo para estudiantes de ciencia de datos, ingeniería y analítica de
-negocios interesados en la aplicación práctica del aprendizaje automático a
-dominios de alta complejidad.
+La reproducibilidad del sistema (pipeline documentado, código abierto y arquitectura modular) lo habilita como recurso educativo en cursos de ciencia de datos, ingeniería y analítica de negocios. La separación por componentes facilita además su uso parcial: un curso de aprendizaje profundo puede tomar prestado el bloque del Transformer; uno de simulación, el motor Monte Carlo; uno de desarrollo de aplicaciones web, la arquitectura cliente-servidor montada sobre FastAPI y React. La complejidad del dominio (degradación no lineal, incertidumbre estocástica, decisión bajo restricciones reglamentarias) aporta un caso de estudio realista para enseñar la cadena completa que conecta datos crudos, modelos y decisión.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{Impacto medioambiental del proyecto}
 
-El entrenamiento de los modelos Transformer se ejecuta en hardware estándar
-(CPU o una GPU de consumo) con tiempos por piloto del orden de minutos, lo que
-mantiene la huella de carbono computacional varios órdenes de magnitud por
-debajo de la de los modelos de lenguaje de gran escala. La inferencia se diseña
-para responder en segundos sobre CPU sin requerir aceleración dedicada en
-producción.
+El entrenamiento del Transformer se ejecuta sobre el portátil descrito en \ref{sec:config_experimental}, sin GPU dedicada, con tiempos por piloto del orden de minutos. La huella computacional del sistema se mantiene varios órdenes de magnitud por debajo de la de los modelos fundacionales de gran escala. La inferencia también se ejecuta en CPU y devuelve la estrategia en cuestión de segundos, sin requerir aceleración dedicada en producción.

@@ -201,10 +201,11 @@ class TestPaceTable:
         return engine
 
     def test_temperature_correction_applied(self):
-        # Perfil con coef de track = +0.5 s/°C; referencia 30, actual 40 → +5 s
+        # Perfil con coef de track = +0.2 s/°C; referencia 30, actual 40 → +2 s
+        # (Dentro de TEMP_CORR_CLAMP_S=3 → no se clampa.)
         params = ProfileParams(
             base=90.0, slope=0.10,
-            track_coef=0.5, air_coef=0.0,
+            track_coef=0.2, air_coef=0.0,
             track_ref=30.0, air_ref=22.0,
         )
         profile = DriverProfile(
@@ -221,8 +222,74 @@ class TestPaceTable:
         )
         table = engine._pace_table("TST", "Bahrain", ctx)
         pace_med, deg_med = table["MEDIUM"]
-        assert abs(pace_med - (90.0 + 0.5 * 10.0)) < 1e-6
+        # 90 + 0.2·10 = 92; queda dentro del envelope por defecto [85.1, 93.8]
+        assert abs(pace_med - 92.0) < 1e-6
         assert abs(deg_med - 0.10) < 1e-6
+
+    def test_temperature_correction_clamped_at_cap(self):
+        # Coef irreal (5 s/°C) × ΔT=10 → 50 s sin clamp; con clamp = 3 s
+        params = ProfileParams(
+            base=90.0, slope=0.05,
+            track_coef=5.0, air_coef=0.0,
+            track_ref=30.0, air_ref=22.0,
+        )
+        profile = DriverProfile(
+            driver_code="TST",
+            profiles={},
+            driver_defaults={},
+            global_defaults={"SOFT": params, "MEDIUM": params, "HARD": params},
+        )
+        engine = self._engine_with_profile(profile)
+        ctx = RaceContext(
+            year=2023, total_laps=50,
+            track_temp=40.0, air_temp=22.0,
+            pit_loss=22.0, sc_probability=0.2,
+        )
+        table = engine._pace_table("TST", "Bahrain", ctx)
+        pace_med, _ = table["MEDIUM"]
+        # 90 + min(3, 50) = 93; dentro de [85.1, 93.8]; no se clampa por envelope
+        assert abs(pace_med - 93.0) < 1e-6
+
+    def test_pace_base_clamped_to_circuit_envelope(self):
+        # Coef enorme + base inflada: sin envelope sería 200 s; clampa a hi=92·1.02
+        params = ProfileParams(
+            base=200.0, slope=0.05,
+            track_coef=0.0, air_coef=0.0,
+            track_ref=30.0, air_ref=22.0,
+        )
+        profile = DriverProfile(
+            driver_code="TST",
+            profiles={},
+            driver_defaults={},
+            global_defaults={"SOFT": params, "MEDIUM": params, "HARD": params},
+        )
+        engine = self._engine_with_profile(profile)
+        ctx = RaceContext(
+            year=2023, total_laps=50,
+            track_temp=30.0, air_temp=22.0,
+            pit_loss=22.0, sc_probability=0.2,
+        )
+        table = engine._pace_table("TST", "Bahrain", ctx)
+        pace_med, _ = table["MEDIUM"]
+        # Envelope por defecto MEDIUM: fast=87, median=93, slow=101
+        # → hi = 93 · 1.02 = 94.86. pace_med debe estar en torno a 94.86.
+        assert pace_med <= 95.0
+        assert pace_med >= 90.0  # no debe bajar del lo
+
+    def test_race_envelope_lo_hi(self):
+        engine = make_engine(empty_df())
+        ctx = RaceContext(
+            year=2023, total_laps=57,
+            track_temp=33.0, air_temp=26.0,
+            pit_loss=22.5, sc_probability=0.2,
+        )
+        lo, hi, anchor = engine._race_envelope(2023, "Bahrain", ctx)
+        # Envelope por defecto: medians SOFT=92 MEDIUM=93 HARD=94 → mediana global=93
+        # anchor = 57 · 93 = 5301
+        assert abs(anchor - 5301.0) < 1.0
+        assert lo == anchor * 0.985
+        assert hi > anchor * 1.04
+        assert lo < anchor < hi
 
     def test_returns_all_three_compounds(self):
         params = ProfileParams(90.0, 0.08, 0.0, 0.0, 30.0, 22.0)

@@ -145,16 +145,56 @@ def load_driver_profile(driver_code: str) -> DriverProfile:
     )
 
 
-def resolve_profile_params(profile: DriverProfile, circuit_id: str, compound: str) -> ProfileParams:
+def resolve_profile_params_with_level(
+    profile: DriverProfile,
+    circuit_id: str,
+    compound: str,
+    *,
+    circuit_baseline: float | None = None,
+) -> Tuple[ProfileParams, int]:
+    """Return ``(params, level)`` describing which fallback tier was used.
+
+    Levels
+    ------
+    1: circuit+compound-specific (most reliable)
+    2: driver+compound default
+    3: global compound default (across the grid)
+    4: hardcoded literal (least reliable; emits a polluted 90 s base unless
+       ``circuit_baseline`` is provided, in which case the literal is replaced
+       by the supplied baseline pace for that circuit/compound).
+    """
     compound_key = compound.upper()
     key = (str(circuit_id), compound_key)
 
     if key in profile.profiles:
-        return profile.profiles[key]
+        return profile.profiles[key], 1
     if compound_key in profile.driver_defaults:
-        return profile.driver_defaults[compound_key]
+        return profile.driver_defaults[compound_key], 2
     if compound_key in profile.global_defaults:
-        return profile.global_defaults[compound_key]
+        return profile.global_defaults[compound_key], 3
 
-    # Fallback default
-    return ProfileParams(base=90.0, slope=0.05, track_coef=0.0, air_coef=0.0, track_ref=30.0, air_ref=22.0)
+    base = float(circuit_baseline) if circuit_baseline is not None else 90.0
+    return (
+        ProfileParams(
+            base=base,
+            slope=0.05,
+            track_coef=0.0,
+            air_coef=0.0,
+            track_ref=30.0,
+            air_ref=22.0,
+        ),
+        4,
+    )
+
+
+def resolve_profile_params(
+    profile: DriverProfile,
+    circuit_id: str,
+    compound: str,
+    *,
+    circuit_baseline: float | None = None,
+) -> ProfileParams:
+    params, _ = resolve_profile_params_with_level(
+        profile, circuit_id, compound, circuit_baseline=circuit_baseline
+    )
+    return params

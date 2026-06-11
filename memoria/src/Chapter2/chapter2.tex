@@ -35,114 +35,41 @@ Los equipos de Fórmula 1 han desarrollado modelos de ritmo propietarios de gran
 
 La API registra datos durante las sesiones de carrera a distintas granularidades temporales: los tiempos de vuelta y los cambios de stint se capturan vuelta a vuelta; la telemetría vehicular se muestrea a \SI{10}{Hz}. El histórico disponible desde la temporada 2023 permite el análisis retrospectivo de carreras y la comparación de rendimiento entre temporadas.
 
-Los datos de telemetría incluyen la posición del acelerador y freno, la activación del DRS, los cambios de marcha y la velocidad instantánea. Esta resolución permite identificar patrones de comportamiento individuales del piloto que el tiempo de vuelta agregado no captura.
+Los datos de telemetría incluyen la posición del acelerador y freno, la activación del DRS, los cambios de marcha y la velocidad instantánea. Esta resolución permite identificar patrones de comportamiento individuales del piloto que el tiempo de vuelta no captura.
 
 La API también integra información estructurada sobre pilotos, equipos y sus afiliaciones, junto con métricas de desempeño histórico que contextualizan el análisis competitivo.
 
 Para el proyecto \textit{RaceScope}, OpenF1 constituye la fuente primaria de datos, permitiendo la ingesta sistemática de características de carrera necesarias para el entrenamiento de modelos de predicción de tiempos de vuelta y la evaluación cuantitativa de estrategias de paradas en boxes. Como alternativa complementaria existe \needcite{FastF1}, una librería Python que encapsula datos de la API Ergast (deprecada en 2024) y de los canales de telemetría oficiales, aunque su granularidad temporal es inferior a la de OpenF1 para datos en tiempo real.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection{Endpoints principales de OpenF1}
+\subsection{Dominios de datos relevantes para RaceScope}
 \label{subsec:openf1_endpoints}
 
-La API de OpenF1 expone múltiples endpoints REST organizados por dominio. A continuación se describen los endpoints más relevantes para \textit{RaceScope}, cada uno con estructura detallada de parámetros y respuestas que alimentan las distintas fases del motor de simulación.
-
-Los datos telemétricos se capturan a una frecuencia de \SI{10}{Hz} durante toda la sesión, generando millones de puntos por evento que son procesados en la canalización de características. La información de control (acelerador, freno, marcha) y dinámica (velocidad, DRS) alimenta al modelo Transformer que predice los tiempos de vuelta bajo condiciones variables de degradación de neumáticos y estrategia de parada. Los datos de vueltas, stints y meteorología operan a una granularidad mucho menor (una fila por vuelta o por stint) y constituyen el eje central de la ingeniería de características del sistema.
+OpenF1 organiza la información por sesión en cuatro dominios que cubren, juntos, todo lo que el sistema necesita para reconstruir el ritmo de una carrera. La tabla~\ref{tab:openf1_dominios} resume cada dominio con su granularidad temporal, la información principal que aporta y el papel que cumple en \textit{RaceScope}.
 
 \begin{table}[H]
 \centering
-\caption{Endpoint \texttt{/v1/car\_data} — Datos telemétricos del vehículo en tiempo real}
-\label{tab:openf1_car_data}
+\caption{Dominios de información disponibles en la API de OpenF1 y su uso en \textit{RaceScope}.}
+\label{tab:openf1_dominios}
 \small
-\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X}
 \toprule
-\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
+\textbf{Dominio} & \textbf{Granularidad} & \textbf{Información principal} & \textbf{Uso en \textit{RaceScope}} \\
 \midrule
-\multirow{3}{*}{\textit{Identificadores}} & \texttt{driver\_number} & Número único del piloto (1–99) \\
-& \texttt{session\_key} & Identificador de sesión (entrenamiento, clasificación, carrera) \\
-& \texttt{meeting\_key} & Identificador del Gran Premio \\
+Telemetría del vehículo & \SI{10}{Hz} continuo & Acelerador, freno, marcha, RPM, velocidad instantánea, estado de DRS & Características de conducción (\textit{push index}, agresividad) que alimentan al Transformer como contexto del estilo del piloto. \\
 \midrule
-\multirow{4}{*}{\textit{Control Motor}} & \texttt{throttle} & Posición del acelerador (0–100\%), refleja agresividad y gestión de combustible \\
-& \texttt{brake} & Presión de frenada (0–100\%), crítico para identificar patrones de frenada en curvas \\
-& \texttt{rpm} & Revoluciones del motor (6,000–15,500 rpm), indicador de carga del motor \\
-& \texttt{n\_gear} & Marcha seleccionada (1–8), variable para optimización aerodinámica \\
+Vueltas & 1 por vuelta & Tiempo de vuelta, tiempos de sector, velocidad de paso, marcas de \textit{pit-in} y \textit{pit-out} & Variable objetivo principal del modelo de predicción de ritmo. \\
 \midrule
-\multirow{3}{*}{\textit{Dinámica}} & \texttt{speed} & Velocidad instantánea (km/h), base para cálculo de tiempos de vuelta y degradación de neumáticos \\
-& \texttt{drs} & Estado de DRS activado (velocidad en km/h en recta), factor determinante en adelantamientos \\
-& \texttt{date} & Marca de tiempo ISO 8601 (precisión 0.1~s), permite reconstrucción de trayectorias \\
+Stints y compuestos & 1 por stint & Compuesto montado, vuelta de inicio y de fin del stint, edad inicial del neumático & Etiquetado de cada vuelta con su compuesto y su edad de neumático; base para el modelo de degradación paramétrica. \\
+\midrule
+Meteorología & 1 muestra por minuto & Temperatura de pista, temperatura del aire, humedad, lluvia, viento & Contexto térmico de la sesión, decisivo para la degradación y la sensibilidad de los compuestos. \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
-\begin{table}[H]
-\centering
-\caption{Endpoint \texttt{/v1/laps} — Tiempos de vuelta y métricas agregadas por vuelta}
-\label{tab:openf1_laps}
-\small
-\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
-\toprule
-\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
-\midrule
-\multirow{3}{*}{\textit{Identificadores}} & \texttt{driver\_number} & Número del piloto \\
-& \texttt{session\_key} & Identificador de sesión \\
-& \texttt{lap\_number} & Número de vuelta dentro de la sesión (1–$N_\text{vueltas}$) \\
-\midrule
-\multirow{4}{*}{\textit{Tiempos}} & \texttt{lap\_duration} & Tiempo de vuelta en segundos; variable objetivo principal del modelo de predicción \\
-& \texttt{duration\_sector\_1} & Tiempo del sector 1 (s), útil para diagnóstico de rendimiento por zona \\
-& \texttt{duration\_sector\_2} & Tiempo del sector 2 (s) \\
-& \texttt{duration\_sector\_3} & Tiempo del sector 3 (s) \\
-\midrule
-\multirow{3}{*}{\textit{Contexto}} & \texttt{is\_pit\_out\_lap} & Booleano; indica que el piloto acaba de salir de boxes \\
-& \texttt{st\_speed} & Velocidad máxima en trampa de velocidad (km/h), proxy del potencial de motor \\
-& \texttt{date\_start} & Marca de tiempo de inicio de vuelta (ISO 8601) \\
-\bottomrule
-\end{tabular}
-\end{table}
+Las cuatro fuentes son complementarias en escala temporal. La telemetría aporta resolución submétrica del comportamiento del piloto y del vehículo, mientras que las vueltas y los stints condensan esa información en agregados por vuelta que constituyen el eje central de la ingeniería de características. La meteorología, muestreada al minuto, fija las condiciones de contorno bajo las que se interpreta la degradación de cada compuesto. 
 
-\begin{table}[H]
-\centering
-\caption{Endpoint \texttt{/v1/stints} — Información de stints y compuestos de neumático}
-\label{tab:openf1_stints}
-\small
-\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
-\toprule
-\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
-\midrule
-\multirow{2}{*}{\textit{Identificadores}} & \texttt{driver\_number} & Número del piloto \\
-& \texttt{session\_key} & Identificador de sesión \\
-\midrule
-\multirow{4}{*}{\textit{Stint}} & \texttt{stint\_number} & Orden del stint en la carrera (1 = primer stint) \\
-& \texttt{lap\_start} & Vuelta en la que comienza el stint \\
-& \texttt{lap\_end} & Vuelta en la que finaliza el stint (o fin de carrera) \\
-& \texttt{compound} & Compuesto montado: \texttt{SOFT}, \texttt{MEDIUM}, \texttt{HARD}, \texttt{INTERMEDIATE}, \texttt{WET} \\
-\midrule
-\multirow{1}{*}{\textit{Estado}} & \texttt{tyre\_age\_at\_start} & Vueltas previas acumuladas en el neumático al inicio del stint \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[H]
-\centering
-\caption{Endpoint \texttt{/v1/weather} — Condiciones meteorológicas en pista}
-\label{tab:openf1_weather}
-\small
-\begin{tabular}{ll>{\raggedright\arraybackslash}p{7cm}}
-\toprule
-\textbf{Categoría} & \textbf{Campo} & \textbf{Descripción y Rango} \\
-\midrule
-\multirow{2}{*}{\textit{Temperatura}} & \texttt{track\_temperature} & Temperatura de la pista (\si{\celsius}), factor dominante en la degradación térmica del neumático \\
-& \texttt{air\_temperature} & Temperatura del aire (\si{\celsius}), afecta a la presión de inflado y el comportamiento del compuesto \\
-\midrule
-\multirow{3}{*}{\textit{Condiciones}} & \texttt{humidity} & Humedad relativa (\%), indicador de riesgo de lluvia \\
-& \texttt{rainfall} & Booleano; \texttt{true} si se detecta precipitación en el momento de la medición \\
-& \texttt{wind\_speed} & Velocidad del viento (m/s), relevante para la carga aerodinámica y la temperatura de pista \\
-\midrule
-\multirow{1}{*}{\textit{Temporal}} & \texttt{date} & Marca de tiempo de la medición (ISO 8601, muestreo cada $\approx$60~s) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Estos endpoints conforman la columna vertebral de la canalización de datos en \textit{RaceScope}. La granularidad temporal extrema del endpoint \texttt{/v1/car\_data} (muestreo a 0.1~s) captura dinámicas finas de comportamiento del piloto y del vehículo. Los datos del endpoint \texttt{/v1/laps} proporcionan la variable objetivo directa del modelo de predicción de tiempos de vuelta, mientras que los de \texttt{/v1/stints} permiten etiquetadar cada vuelta con su compuesto y edad de neumático correspondiente. Finalmente, los registros de \texttt{/v1/weather} aportan el contexto térmico imprescindible para los modelos de degradación paramétrica. El almacenamiento de estos datos en formato \needcite{Apache Parquet}, un formato columnar orientado a consultas analíticas, permite un acceso eficiente durante el entrenamiento de modelos y la ejecución del motor de simulación.
+El almacenamiento de los datos en formato \needcite{Apache Parquet}, un formato columnar orientado a consultas analíticas, permite cargar únicamente las columnas necesarias en cada fase y mantiene acotado el uso de memoria durante el entrenamiento de modelos y la ejecución del motor de simulación.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Transformers para la predicción de tiempos de vuelta}
@@ -169,10 +96,14 @@ A esta operación se le suman tres elementos arquitectónicos centrales para el 
 \begin{itemize}
     \item \textbf{Codificación posicional.} La atención es invariante a permutaciones, de modo que sin información adicional el modelo no distingue el orden de los elementos de la secuencia. \needcite{La propuesta original añade una codificación posicional sinusoidal a las representaciones de entrada}; trabajos posteriores introducen codificaciones aprendidas durante el entrenamiento o variantes relativas, que se ajustan mejor a longitudes de secuencia fijas.
     \item \textbf{Variantes Pre-LN y Post-LN.} \needcite{Las dos variantes difieren en la ubicación de la normalización por capa dentro de cada bloque del encoder}. La variante Pre-LN, que aplica la normalización antes de la atención y de la red feed-forward, presenta una optimización más estable y permite entrenar redes profundas sin un calentamiento agresivo de la tasa de aprendizaje.
-    \item \textbf{Compuertas multiplicativas.} \needcite{Popularizadas por arquitecturas como Highway Networks, GLU y FiLM}, las compuertas multiplicativas permiten modular cada dimensión del espacio de representación en función de una entrada externa, habitualmente categórica. Aplicadas a un par estático de identificadores, ofrecen un prior estructural que sesga la representación hacia el régimen típico de ese par sin alterar la dinámica temporal del resto de la secuencia.
+    \item \textbf{Compuertas multiplicativas.} \needcite{Popularizadas por arquitecturas como Highway Networks, GLU y FiLM}, las compuertas multiplicativas son un mecanismo simple para condicionar la representación interna del modelo a una entrada externa, casi siempre categórica. 
+    
+    La idea consiste en construir un vector $\mathbf{g} \in (0,1)^d$ del mismo tamaño que la representación y multiplicarlo componente a componente con cada paso temporal de la secuencia, $\mathbf{x}_t \leftarrow \mathbf{x}_t \odot \mathbf{g}$. Cada dimensión queda amplificada cuando su componente en $\mathbf{g}$ se acerca a 1, mantenida en torno a 0.5 y silenciada cuando se acerca a 0. La inicialización habitual (proyección lineal seguida de normalización por capa y sigmoide) hace que el vector parta de $\mathbf{g} \approx 0.5$, equivalente a no modular nada al inicio del entrenamiento; la especialización emerge progresivamente y el coste computacional añadido es despreciable frente al de las capas de atención.
 \end{itemize}
 
-El entrenamiento de un encoder Transformer en regímenes de pocos datos descansa sobre tres decisiones de optimización con base teórica establecida. La \needcite{pérdida de Huber} combina el comportamiento cuadrático de la MSE para errores pequeños con el lineal de la MAE para errores grandes, lo que reduce la influencia de vueltas atípicas (pit-out, safety car) sin perder diferenciabilidad. El optimizador \needcite{AdamW} desacopla la regularización L2 del paso de actualización, evitando la interacción no deseada entre los términos de momento y de regularización presente en la formulación original de Adam. 
+El entrenamiento de un encoder Transformer en regímenes de pocos datos descansa sobre tres decisiones de optimización con base teórica establecida. La \needcite{pérdida de Huber} combina el comportamiento cuadrático de la MSE para errores pequeños con el lineal de la MAE para errores grandes, lo que reduce la influencia de vueltas atípicas (pit-out, safety car) sin perder diferenciabilidad. 
+
+El optimizador \needcite{AdamW} desacopla la regularización L2 del paso de actualización, evitando la interacción no deseada entre los términos de momento y de regularización presente en la formulación original de Adam. 
 
 El planificador \needcite{OneCycleLR} sustituye un calentamiento manual de la tasa de aprendizaje por una trayectoria triangular (subida, bajada y recocido final) que acelera la convergencia y reduce la sensibilidad al valor inicial.
 
@@ -180,11 +111,13 @@ Sobre esta base, tres propiedades de la familia Transformer justifican su adopci
 
 \begin{itemize}
     \item \textbf{Contexto global por defecto}: cada vuelta de la ventana atiende a todas las demás sin restricciones de orden, lo que captura interacciones a distancia (la vuelta de la última parada influye explícitamente sobre la actual).
-    \item \textbf{Aprovechamiento del par estático (circuito, compuesto)}: las dos variables identificadoras estáticas por secuencia alimentan la compuerta multiplicativa descrita arriba para construir un prior específico de cada par.
+    \item \textbf{Aprovechamiento del par (circuito, compuesto)}: en cada simulación, los dos identificadores que la compuerta toma como entrada (el circuito y el compuesto montado) son constantes a lo largo de toda la ventana de contexto. El comportamiento de un neumático duro en Mónaco no tiene nada que ver con el de uno duro en Monza, y un sesgo aditivo (sumar un vector a la representación) no puede atenuar dimensiones relevantes en un trazado e irrelevantes en otro: solo puede desplazarlas. Una compuerta multiplicativa sí puede, y lo hace una sola vez por secuencia, sin gastar capacidad de atención en repropagar los mismos identificadores en cada vuelta.
     \item \textbf{Cabezas auxiliares}: el encoder puede atacar simultáneamente varios objetivos (delta de ritmo respecto al stint, tiempo absoluto, tasa de degradación, coste remanente del stint) compartiendo representación, lo que regulariza el entrenamiento sin necesidad de dropout.
 \end{itemize}
 
-El argumento histórico contra los Transformers, que requieren mucho dato, se invierte cuando el objetivo es deliberadamente memorizar el comportamiento de un único piloto. Con dropout cero, un Transformer especializado por piloto se ajusta con precisión al subespacio efectivo de la combinación piloto-circuito-compuesto sin pretender generalizar más allá del dominio observado.
+El argumento histórico contra los Transformers, que requieren mucho dato para generalizar bien, se invierte aquí. El objetivo del modelo no es generalizar: es memorizar con precisión el comportamiento de un piloto concreto en el subespacio de combinaciones (circuito, compuesto) que ha rodado de verdad. 
+
+Por eso el entrenamiento se hace por piloto y con \textit{dropout} cero, y por eso la compuerta multiplicativa encaja de manera natural en este planteamiento: una $\mathbf{g}$ específica por cada par equivale a un régimen distinto para cada combinación (Mónaco-HARD, Monza-HARD, etc.), de modo que la red no aprende un único mapa universal de degradación sino un atlas de mapas, uno por par. Esta especificidad es lo que el sistema necesita para predecir el ritmo en regímenes ya observados, no en regímenes hipotéticos para los que el modelo no tiene base empírica.
 
 El Capítulo~\ref{cap:caso_estudio} detalla la configuración concreta de la red ($d_\text{model} = 384$, 8 capas, contexto de 40 vueltas, 15 features continuos) y la trayectoria de diseño (v1 $\to$ v2 $\to$ v3) que llevó a esa configuración.
 
@@ -194,7 +127,7 @@ El Capítulo~\ref{cap:caso_estudio} detalla la configuración concreta de la red
 
 Cuando un problema de regresión se desagrega en muchas categorías y el número de observaciones por categoría es bajo, el ajuste independiente por categoría tiende al sobreajuste y produce coeficientes inestables. \needcite{Los modelos lineales jerárquicos resuelven esta limitación mediante el concepto de \textit{partial pooling}: los coeficientes estimados para un subgrupo con pocos datos se regularizan hacia los del nivel inmediatamente superior de la jerarquía, en lugar de estimarse de forma totalmente independiente}.
 
-Una implementación práctica habitual sustituye el ajuste bayesiano completo por una jerarquía explícita de niveles con \textit{fallback}: si un nivel concreto carece de observaciones suficientes, los parámetros se estiman sobre un nivel más agregado. El Capítulo~\ref{cap:caso_estudio} aplica este principio al perfil paramétrico de degradación de neumáticos, definiendo cuatro niveles desde el más específico (piloto, circuito y compuesto) hasta el más general (valores de seguridad por defecto).
+Una implementación práctica habitual sustituye el ajuste bayesiano completo por una jerarquía explícita de niveles con \textit{fallbacks}: si un nivel concreto carece de observaciones suficientes, los parámetros se estiman sobre un nivel más agregado. El Capítulo~\ref{cap:caso_estudio} aplica este principio al perfil paramétrico de degradación de neumáticos, definiendo cuatro niveles desde el más específico (piloto, circuito y compuesto) hasta el más general (valores de seguridad por defecto).
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Simulación Monte Carlo y optimización bajo incertidumbre}

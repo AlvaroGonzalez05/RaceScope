@@ -21,13 +21,21 @@ from .config import (
     MODELS_DIR,
     MC_TOP_K,
     PACE_CURVE_CACHE_DIR,
+    EXPECTED_TIME_HI_FACTOR, EXPECTED_TIME_LO_FACTOR, EXPECTED_TIME_SC_MARGIN_S,
+    PACE_BASE_HI_FACTOR, PACE_BASE_LO_FACTOR,
+    PACE_LAP_HI_FACTOR, PACE_LAP_LO_FACTOR,
     PIT_LOSS_FALLBACK, PIT_LOSS_MIN, PIT_LOSS_MAX,
     PIT_WINDOW_BIN,
     RANDOM_SEED,
     SC_PROBABILITY_FALLBACK, SC_PROBABILITY_MIN, SC_PROBABILITY_MAX,
+    TEMP_CORR_CLAMP_S,
     TRANSFORMER_V2_N_SIM,
 )
+import logging
+
 from .driver_profile import load_driver_profile, resolve_profile_params
+
+logger = logging.getLogger(__name__)
 
 # torch-dependent model imports are done lazily inside _load_model_cached and
 # _simulate_strategy so that importing this module never triggers torch
@@ -59,6 +67,11 @@ class StrategyEngine:
         random.seed(RANDOM_SEED)
         np.random.seed(RANDOM_SEED)
         self.valid_compounds = {"SOFT", "MEDIUM", "HARD"}
+        # (year, circuit_id) → {compound: {"fast", "median", "slow"}} cache.
+        # Built lazily on first access; rebuilt only if `features` is swapped.
+        self._lap_envelope_cache: Dict[
+            Tuple[int, str], Dict[str, Dict[str, float]]
+        ] = {}
 
     def _context(self, year: int, circuit_id: str) -> RaceContext:
         df = self.features
@@ -199,6 +212,118 @@ class StrategyEngine:
                 bounds[compound] = (default_lo, default_hi)
         return bounds
 
+    def _circuit_lap_envelope(
+        self, year: int, circuit_id: str
+    ) -> Dict[str, Dict[str, float]]:
+        """Return ground-truth race-lap percentiles per compound for a circuit.
+
+        The DriverProfile OLS is unreliable (the 2023 Sakhir baseline diagnostic
+        recorded MEDIUM-compound `base` ranging from 84 s to 188 s and SOFT-
+        compound `base` up to 188 s). Real race-lap times at a given circuit
+        do not move 80 s across drivers in the same race, so we derive a hard
+        sanity envelope from the actual lap-time distribution stored in the
+        gold parquet and use it to clamp the per-driver pace_base and the
+        per-lap predicted curve.
+
+        Returns ``{compound: {"fast": Q5, "median": Q50, "slow": Q90}}`` in
+        raw seconds. Falls back to the same compound in any other year for
+        the same circuit if the requested year has too few laps, and finally
+        to a default envelope hard-coded by compound. Cached per (year,
+        circuit_id) — the underlying parquets only change when the pipeline
+        re-runs.
+        """
+        key = (int(year), str(circuit_id))
+        cached = self._lap_envelope_cache.get(key)
+        if cached is not None:
+            return cached
+
+        df = self.features
+        race = df[
+            (df["circuit_id"] == circuit_id)
+            & (df["session_type"] == "RACE")
+        ]
+        same_year = race[race["year"] == year]
+        # Prefer same-year data, broaden to all years if scarce.
+        source = same_year if len(same_year) >= 400 else race
+
+        envelope: Dict[str, Dict[str, float]] = {}
+        for compound, cdf in source.groupby("compound"):
+            if compound is None or compound != compound:
+                continue
+            compound_key = str(compound).upper()
+            if compound_key not in self.valid_compounds:
+                continue
+            lap_times = cdf["lap_time"].dropna()
+            if lap_times.empty:
+                continue
+            # Drop in-/out-/SC-laps using the same heuristic as `_compound_stats`:
+            # anything more than 2× the median is structural noise, not pace.
+            med0 = float(lap_times.median())
+            clean = lap_times[(lap_times < 2.0 * med0) & (lap_times > 0.5 * med0)]
+            if len(clean) < 5:
+                continue
+            envelope[compound_key] = {
+                "fast": float(np.quantile(clean, 0.05)),
+                "median": float(np.quantile(clean, 0.50)),
+                "slow": float(np.quantile(clean, 0.90)),
+            }
+
+        # Fallback per compound: hard floor so callers can rely on the dict.
+        # These are conservative averages across modern F1 circuits.
+        default = {
+            "SOFT":   {"fast": 86.0, "median": 92.0, "slow": 99.0},
+            "MEDIUM": {"fast": 87.0, "median": 93.0, "slow": 101.0},
+            "HARD":   {"fast": 88.0, "median": 94.0, "slow": 103.0},
+        }
+        for compound, fallback in default.items():
+            envelope.setdefault(compound, fallback)
+
+        self._lap_envelope_cache[key] = envelope
+        return envelope
+
+    def _race_envelope(
+        self, year: int, circuit_id: str, context: "RaceContext"
+    ) -> Tuple[float, float, float]:
+        """Per-race plausible total-time envelope ``(lo, hi, anchor)`` in seconds.
+
+        Returns the lower bound, upper bound, and the "anchor" median race time
+        from which both are derived. Used as a last-resort clamp on
+        ``expected_time`` plus a warning if any strategy escapes the window.
+
+        The anchor is ``total_laps · median_lap`` where ``median_lap`` is the
+        median (across SOFT/MEDIUM/HARD) of the 50th-percentile lap time at
+        this circuit. Adding ``n_stops · pit_loss`` is left to the caller so
+        the envelope can be tightened per candidate.
+        """
+        envelope = self._circuit_lap_envelope(year, circuit_id)
+        medians = [
+            v["median"] for k, v in envelope.items() if k in self.valid_compounds
+        ]
+        median_lap = float(np.median(medians)) if medians else 95.0
+        anchor = float(context.total_laps) * median_lap
+        lo = anchor * EXPECTED_TIME_LO_FACTOR
+        hi = anchor * EXPECTED_TIME_HI_FACTOR + EXPECTED_TIME_SC_MARGIN_S
+        return lo, hi, anchor
+
+    @staticmethod
+    def _apply_temperature_correction(params, context: "RaceContext") -> float:
+        """Return the clamped temperature delta to add on top of ``params.base``.
+
+        ``DriverProfile.params`` are fitted by OLS on noisy stint data, and the
+        track/air coefficients are routinely overfit (the baseline diagnostic
+        recorded |track_corr| > 3 s on 53/60 driver-compound rows for 2023
+        Sakhir). We clamp each component to ±``TEMP_CORR_CLAMP_S`` to keep the
+        effective pace inside a physically defensible window. Shared between
+        ``_pace_table`` (analytical candidate generation) and
+        ``_precompute_pace_curves`` (model input curve) so the cap cannot drift
+        out of sync.
+        """
+        track_corr = params.track_coef * (context.track_temp - params.track_ref)
+        air_corr = params.air_coef * (context.air_temp - params.air_ref)
+        track_corr = float(np.clip(track_corr, -TEMP_CORR_CLAMP_S, TEMP_CORR_CLAMP_S))
+        air_corr = float(np.clip(air_corr, -TEMP_CORR_CLAMP_S, TEMP_CORR_CLAMP_S))
+        return track_corr + air_corr
+
     def _pace_table(
         self,
         driver_code: str,
@@ -210,17 +335,20 @@ class StrategyEngine:
         Fuente única de ritmo y degradación para la fase analítica de
         generación de candidatas. Se apoya en `DriverProfile` (lineal
         por driver/circuit/compound con 3 niveles de fallback) y aplica
-        la corrección de temperatura del contexto actual.
+        la corrección de temperatura del contexto actual, clampada para
+        evitar coeficientes OLS sobreajustados.
         """
         profile = load_driver_profile(driver_code)
+        envelope = self._circuit_lap_envelope(context.year, circuit_id)
         table: Dict[str, Tuple[float, float]] = {}
         for compound in self.valid_compounds:
             params = resolve_profile_params(profile, circuit_id, compound)
-            pace_base = (
-                params.base
-                + params.track_coef * (context.track_temp - params.track_ref)
-                + params.air_coef   * (context.air_temp   - params.air_ref)
-            )
+            pace_base = params.base + self._apply_temperature_correction(params, context)
+            env = envelope.get(compound)
+            if env is not None:
+                lo = env["fast"] * PACE_BASE_LO_FACTOR
+                hi = env["median"] * PACE_BASE_HI_FACTOR
+                pace_base = float(np.clip(pace_base, lo, hi))
             deg_rate = max(float(params.slope), 0.0)
             table[compound] = (float(pace_base), float(deg_rate))
         return table
@@ -439,6 +567,7 @@ class StrategyEngine:
         model, _ = self._load_model(driver_code)
         total_laps = context.total_laps
 
+        envelope = self._circuit_lap_envelope(context.year, circuit_id)
         curves = {}
         for compound in self.valid_compounds:
             params = resolve_profile_params(profile, circuit_id, compound)
@@ -446,9 +575,15 @@ class StrategyEngine:
             base_series = (
                 params.base
                 + params.slope * (laps - 1)
-                + params.track_coef * (context.track_temp - params.track_ref)
-                + params.air_coef * (context.air_temp - params.air_ref)
+                + self._apply_temperature_correction(params, context)
             )
+            env = envelope.get(compound)
+            if env is not None:
+                # Clamp the input context the model sees so a polluted profile
+                # cannot leak into the autoregressive rollout.
+                lap_lo = env["fast"] * PACE_LAP_LO_FACTOR
+                lap_hi = env["slow"] * PACE_LAP_HI_FACTOR
+                base_series = np.clip(base_series, lap_lo, lap_hi)
             df = pd.DataFrame({
                 "lap_number": laps,
                 "stint_age": laps,
@@ -459,7 +594,15 @@ class StrategyEngine:
                 "air_temp": context.air_temp,
                 "lap_time": base_series,
             })
-            curves[compound] = model.predict_stint(df)
+            predicted = np.asarray(model.predict_stint(df), dtype=float)
+            if env is not None:
+                # Hard cap on each output lap: the transformer is overfit per
+                # driver and routinely emits 60 s and 200 s laps when the
+                # input context is unfamiliar. Anchoring to the circuit's real
+                # lap-time envelope keeps expected_time inside a defensible
+                # window regardless of model version (v1/v2/v3).
+                predicted = np.clip(predicted, lap_lo, lap_hi)
+            curves[compound] = predicted
 
         rows = []
         for compound, series in curves.items():
@@ -533,6 +676,18 @@ class StrategyEngine:
         totals        = np.zeros(n_sim, dtype=float)
         traffic_mu    = 0.15
         traffic_sigma = 0.05
+
+        # Per-lap clamp envelope derived from real race data for this circuit.
+        # The MC transformer rollout (v1/v2/v3) is overfit per driver and emits
+        # 60 s and 200 s laps when the input context is unfamiliar, so we cap
+        # each predicted lap before it accumulates into `totals`.
+        envelope = self._circuit_lap_envelope(context.year, circuit_id)
+
+        def _lap_bounds_for(compound: str) -> Tuple[float, float] | None:
+            env = envelope.get(compound.upper())
+            if env is None:
+                return None
+            return (env["fast"] * PACE_LAP_LO_FACTOR, env["slow"] * PACE_LAP_HI_FACTOR)
 
         # Lazy imports keep startup torch-free
         from .models_transformer import (  # noqa: PLC0415
@@ -623,6 +778,9 @@ class StrategyEngine:
                         race_lap_start=race_lap_cursor,
                         stint_number=stint_number,
                     )  # (n_sim, stint_len)
+                    bounds = _lap_bounds_for(compound_key)
+                    if bounds is not None:
+                        lap_times_batch = np.clip(lap_times_batch, bounds[0], bounds[1])
                     race_lap_cursor += stint_len
 
                     traffic_noises = np.array([
@@ -701,6 +859,9 @@ class StrategyEngine:
                         circuit_int=circuit_int,
                         race_lap_start=race_lap_cursor,
                     )  # (n_sim, stint_len)
+                    bounds = _lap_bounds_for(compound_key)
+                    if bounds is not None:
+                        lap_times_batch = np.clip(lap_times_batch, bounds[0], bounds[1])
                     race_lap_cursor += stint_len
 
                     traffic_noises = np.array([
@@ -759,6 +920,9 @@ class StrategyEngine:
                             base_lap_time=base_lap_time,
                             rng=rng_i,
                         )
+                        bounds = _lap_bounds_for(compound_key)
+                        if bounds is not None:
+                            lap_times = np.clip(np.asarray(lap_times, dtype=float), bounds[0], bounds[1])
                         traffic_noise = float(rng_i.normal(
                             traffic_mu * stint_len,
                             traffic_sigma * math.sqrt(max(1, stint_len)),
@@ -947,10 +1111,33 @@ class StrategyEngine:
             )
             refined[id(candidate)] = (mc_mean, mc_var)
 
+        env_lo, env_hi, env_anchor = self._race_envelope(year, circuit_id, context)
+
         for score, mean, var, candidate in ranked:
             if id(candidate) in refined:
                 mean, var = refined[id(candidate)]
                 score = mean + risk_bias * var
+            # Last-resort sanity clamp. If M1–M3 mitigations work this should
+            # never trigger; the warning gives operational visibility of any
+            # regression where a driver or model produces totals outside the
+            # circuit's physical envelope.
+            n_stops = len(candidate.stop_laps)
+            stops_floor = n_stops * context.pit_loss * 0.85
+            stops_ceil = n_stops * context.pit_loss * 1.15
+            cand_lo = env_lo + stops_floor
+            cand_hi = env_hi + stops_ceil
+            expected_time_clamped = False
+            if not cand_lo <= mean <= cand_hi:
+                logger.warning(
+                    "strategy_envelope_clamp: driver=%s circuit=%s type=%s "
+                    "expected_time=%.1fs envelope=[%.1f, %.1f] "
+                    "(anchor=%.1f, n_stops=%d)",
+                    driver_code, circuit_id, candidate.strategy_type,
+                    mean, cand_lo, cand_hi, env_anchor, n_stops,
+                )
+                mean = float(np.clip(mean, cand_lo, cand_hi))
+                score = mean + risk_bias * var
+                expected_time_clamped = True
             key = self._cluster_key(candidate)
             if key in seen:
                 continue
@@ -982,6 +1169,7 @@ class StrategyEngine:
                 "pit_windows": candidate.pit_windows,
                 "stop_laps": candidate.stop_laps,
                 "expected_time": mean,
+                "expected_time_clamped": expected_time_clamped,
                 "variance": var,
                 "risk_score": score,
                 "stop_profitability": self._stop_profitability(

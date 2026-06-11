@@ -1,0 +1,104 @@
+%% ─────────────────────────────────────────────────────────────────────────────
+%% Anexo II — Evaluación de calibración: gráficas por piloto
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\chapter{Evaluación de calibración: gráficas por piloto}
+\label{ann:eval_calibracion}
+
+Este anexo complementa la sección~\ref{sec:eval_calibracion} con la lectura individual de cada piloto sobre las carreras evaluadas de 2025. Para cada uno se presentan dos vistas. La primera es un \textit{dumbbell} con el tiempo total predicho (círculo blanco) y el tiempo real (círculo relleno) carrera a carrera, unidos por una línea fina del color del piloto y con el error firmado anotado a la derecha. La segunda es la serie temporal del error firmado a lo largo del calendario, con la franja gris del margen $\pm$\SI{60}{\second} de la acotación de \textit{safety car} como referencia. La lectura agregada (MAPE, sesgo, distribución del error absoluto) se reserva al capítulo~\ref{cap:resultados}; aquí el foco es el comportamiento del motor en cada Gran Premio concreto.
+
+% ──────────────── Norris ────────────────
+\section*{Norris}
+\label{ann:eval_NOR}
+
+Norris cierra la temporada con un MAPE del 14{,}45\,\% y un sesgo medio de +682\,s sobre 24 carreras. El \textit{dumbbell} de la figura~\ref{fig:eval_NOR_dumbbell} permite localizar las dos divergencias mayores (Melbourne y Spa), donde el motor predice un tiempo cercano al nominal mientras que la carrera real se acorta por bandera roja o lluvia. La figura~\ref{fig:eval_NOR_error} muestra la serie temporal del error firmado en el orden del calendario.
+
+\begin{figure}[p]
+\centering
+\IfFileExists{Chapter5/images/dumbbell_NOR.pdf}{%
+  \includegraphics[height=0.82\textheight,keepaspectratio]{Chapter5/images/dumbbell_NOR.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Norris: tiempo predicho (círculo blanco) frente al tiempo real (círculo relleno) carrera a carrera, con el error firmado anotado a la derecha.}
+\label{fig:eval_NOR_dumbbell}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\IfFileExists{Chapter5/images/error_signed_NOR.pdf}{%
+  \includegraphics[width=\textwidth]{Chapter5/images/error_signed_NOR.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Norris: serie temporal del error firmado predicho\,$-$\,real, con la franja $\pm$\SI{60}{\second} del margen de \textit{safety car} como referencia.}
+\label{fig:eval_NOR_error}
+\end{figure}
+
+% ──────────────── Piastri ────────────────
+\section*{Piastri}
+\label{ann:eval_PIA}
+
+Piastri es el piloto con mayor MAPE de los cuatro (14{,}57\,\%) y un sesgo medio de +688\,s sobre 23 carreras válidas. El patrón temporal es prácticamente paralelo al de su compañero de equipo Norris, lo que sugiere que el sesgo procede del motor y no de un perfil paramétrico del piloto. Las figuras~\ref{fig:eval_PIA_dumbbell} y~\ref{fig:eval_PIA_error} muestran las dos vistas individuales.
+
+\begin{figure}[p]
+\centering
+\IfFileExists{Chapter5/images/dumbbell_PIA.pdf}{%
+  \includegraphics[height=0.82\textheight,keepaspectratio]{Chapter5/images/dumbbell_PIA.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Piastri: tiempo predicho frente al tiempo real carrera a carrera, con el error firmado anotado a la derecha.}
+\label{fig:eval_PIA_dumbbell}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\IfFileExists{Chapter5/images/error_signed_PIA.pdf}{%
+  \includegraphics[width=\textwidth]{Chapter5/images/error_signed_PIA.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Piastri: serie temporal del error firmado predicho\,$-$\,real, con la franja $\pm$\SI{60}{\second} del margen de \textit{safety car} como referencia.}
+\label{fig:eval_PIA_error}
+\end{figure}
+
+% ──────────────── Verstappen ────────────────
+\section*{Verstappen}
+\label{ann:eval_VER}
+
+Verstappen presenta un MAPE del 14{,}56\,\% y un sesgo medio de +692\,s sobre 23 carreras. El \textit{dumbbell} de la figura~\ref{fig:eval_VER_dumbbell} confirma que la sobreestimación se reparte de manera homogénea por el calendario, sin un circuito concreto que aporte un peso desproporcionado al sesgo global más allá de los casos extremos comunes a los cuatro pilotos. La serie temporal aparece en la figura~\ref{fig:eval_VER_error}.
+
+\begin{figure}[p]
+\centering
+\IfFileExists{Chapter5/images/dumbbell_VER.pdf}{%
+  \includegraphics[height=0.82\textheight,keepaspectratio]{Chapter5/images/dumbbell_VER.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Verstappen: tiempo predicho frente al tiempo real carrera a carrera, con el error firmado anotado a la derecha.}
+\label{fig:eval_VER_dumbbell}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\IfFileExists{Chapter5/images/error_signed_VER.pdf}{%
+  \includegraphics[width=\textwidth]{Chapter5/images/error_signed_VER.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Verstappen: serie temporal del error firmado predicho\,$-$\,real, con la franja $\pm$\SI{60}{\second} del margen de \textit{safety car} como referencia.}
+\label{fig:eval_VER_error}
+\end{figure}
+
+% ──────────────── Leclerc ────────────────
+\section*{Leclerc}
+\label{ann:eval_LEC}
+
+Leclerc es el piloto mejor calibrado de los cuatro, con un MAPE del 13{,}53\,\% y un sesgo medio de +637\,s sobre 24 carreras. La mediana del error firmado se sitúa en +476\,s, la más baja del grupo, lo que se traduce en una franja de error más estrecha en la serie temporal de la figura~\ref{fig:eval_LEC_error}. El \textit{dumbbell} correspondiente es la figura~\ref{fig:eval_LEC_dumbbell}.
+
+\begin{figure}[p]
+\centering
+\IfFileExists{Chapter5/images/dumbbell_LEC.pdf}{%
+  \includegraphics[height=0.82\textheight,keepaspectratio]{Chapter5/images/dumbbell_LEC.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Leclerc: tiempo predicho frente al tiempo real carrera a carrera, con el error firmado anotado a la derecha.}
+\label{fig:eval_LEC_dumbbell}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\IfFileExists{Chapter5/images/error_signed_LEC.pdf}{%
+  \includegraphics[width=\textwidth]{Chapter5/images/error_signed_LEC.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Leclerc: serie temporal del error firmado predicho\,$-$\,real, con la franja $\pm$\SI{60}{\second} del margen de \textit{safety car} como referencia.}
+\label{fig:eval_LEC_error}
+\end{figure}

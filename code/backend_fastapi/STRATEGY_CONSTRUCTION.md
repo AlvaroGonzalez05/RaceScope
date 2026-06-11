@@ -65,9 +65,10 @@ compuesto `{SOFT, MEDIUM, HARD}` el motor obtiene un par
 `(pace_base, deg_rate)`:
 
 ```python
-pace_base = params.base
-          + params.track_coef * (context.track_temp - params.track_ref)
-          + params.air_coef   * (context.air_temp   - params.air_ref)
+pace_base = params.base + _apply_temperature_correction(params, context)
+pace_base = clip(pace_base,
+                 env.fast   * PACE_BASE_LO_FACTOR,
+                 env.median * PACE_BASE_HI_FACTOR)
 deg_rate  = max(params.slope, 0.0)
 ```
 
@@ -77,11 +78,55 @@ compound)` (`app/driver_profile.py`), con **4 niveles de fallback**:
 1. `(driver, circuit, compound)` específico
 2. `driver_defaults[compound]`
 3. `global_defaults[compound]`
-4. `ProfileParams(base=90.0, slope=0.05, …)`
+4. `ProfileParams(base=90.0, slope=0.05, …)` — opcionalmente sustituido por
+   `circuit_baseline` cuando el llamante lo provee (ver §2.b).
 
 El profile es lineal: `lap_time(stint_age) = base + slope · stint_age`.
 Lineal es suficiente para decidir la **vuelta de parada óptima**, que
 es la decisión clave de esta fase.
+
+### 2.a Corrección térmica clampada
+
+Los coeficientes `track_coef` y `air_coef` se ajustan por OLS sobre el
+dataset de entrenamiento; en stints cortos o con multicolinealidad alta
+salen sobreajustados (un diagnóstico baseline en Sakhir 2023 registró
+|track_corr| > 3 s en **53 de 60** combinaciones piloto–compuesto, con
+ALB MEDIUM alcanzando `track_coef = 6.99 s/°C`, mientras la sensibilidad
+real en F1 está en `0.05–0.15 s/°C`). Cada término se clampa
+independientemente a `±TEMP_CORR_CLAMP_S` (3 s por defecto) antes de
+sumarse a `params.base`. El helper `_apply_temperature_correction` es
+**compartido** por `_pace_table` y `_precompute_pace_curves` para que el
+cap no pueda diverger entre los dos caminos del motor.
+
+### 2.b Envoltura de pace por circuito (`_circuit_lap_envelope`)
+
+El `base` por piloto que entra al perfil paramétrico está absorbiendo
+ruido del dataset (vueltas in/out, qualifying mezclado, safety car
+residual). En el mismo diagnóstico de Sakhir el `base` MEDIUM se
+distribuyó entre 84 s y 188 s; sumas de 57 vueltas con ese rango daban
+duraciones totales entre 57 min y 3 h 16 min para pilotos de la misma
+carrera.
+
+`_circuit_lap_envelope(year, circuit_id)` devuelve, por compuesto,
+`(fast=Q5, median=Q50, slow=Q90)` calculados sobre los `lap_time` reales
+del **mismo circuito** en la temporada solicitada (con fallback a otras
+temporadas si los datos son escasos), tras filtrar in/out/SC vía un
+recorte `0.5 · med < lap_time < 2.0 · med`. Las percentiles son la
+**ground truth** del circuito y no dependen de los perfiles.
+
+Se aplica como **clamp duro** en dos sitios:
+
+- `pace_base` en `_pace_table` → `[fast · 0.99, median · 1.02]`
+  (el ritmo fresco no puede ser más rápido que el quinto percentil
+  histórico, ni más lento que un 2 % sobre la mediana de carrera).
+- Cada vuelta del `curves[compound]` de `_precompute_pace_curves`,
+  tanto el `base_series` de entrada al modelo como su salida
+  `model.predict_stint(...)` → `[fast · 0.98, slow · 1.10]`. Esto
+  protege a la suma `Σ lap_times` que alimenta `_analytical_eval`
+  frente a salidas anómalas del Transformer.
+
+El envelope se cachea en `self._lap_envelope_cache[(year, circuit_id)]`
+y se recalcula solo cuando se carga un DataFrame nuevo.
 
 ---
 
@@ -228,6 +273,13 @@ Transformer despliega su capacidad estocástica completa.
 - `pit_loss` reducido a 12 s mínimo (−8 s) cuando el SC cae a ≤2
   vueltas de un stop programado.
 
+Antes de las simulaciones se carga el `envelope` del circuito (§2.b) y se
+expone como cierre `_lap_bounds_for(compound)` que devuelve
+`(lap_lo, lap_hi)`. Cada path de modelo lo usa para clampar las vueltas
+generadas (ver §7.2): el Transformer está overfit por piloto y, sin esta
+red, puede emitir vueltas a 60 s o 200 s en condiciones poco vistas en
+entrenamiento.
+
 ### 7.2 Rollout por modelo
 
 Dispatch por tipo de modelo cargado:
@@ -238,11 +290,12 @@ Dispatch por tipo de modelo cargado:
   `phase_b` normalizadas), temperaturas. Contexto `(T, 15)` con
   `stint_number_norm`. El embedding Circuit × Compound actúa como gate
   multiplicativo en la rama de degradación. Salida: `(n_sim, stint_len)`
-  tiempos por vuelta. Se suma y se añade ruido de tráfico
-  N(`μ·L`, `σ²·L`).
-- **Transformer v2.** Igual flujo, contexto `(T, 14)`.
+  tiempos por vuelta, **clampada lap a lap** con `_lap_bounds_for(compound)`
+  antes de sumarse. Se añade ruido de tráfico N(`μ·L`, `σ²·L`).
+- **Transformer v2.** Igual flujo, contexto `(T, 14)`, mismo clamp.
 - **Transformer v1 / LSTM.** Caminos legacy mantenidos para
-  compatibilidad.
+  compatibilidad; el clamp también se aplica al `lap_times` que devuelve
+  `rollout_mc`.
 
 Acumulación final:
 
@@ -298,13 +351,39 @@ irreal. Aunque la matemática lo permita, no se muestra al usuario.
 ya aceptada, se descarta. Evita devolver cinco variantes de "parar en
 la 18-20".
 
-### 8.5 Salida por estrategia
+### 8.5 Sanity envelope (post-evaluación)
+
+Antes de añadir cada estrategia al payload, `expected_time` se contrasta
+contra la **envoltura física del circuito**:
+
+```python
+median_lap = median(envelope[c].median for c in {SOFT, MEDIUM, HARD})
+anchor     = total_laps · median_lap
+lo = anchor · EXPECTED_TIME_LO_FACTOR + n_stops · pit_loss · 0.85
+hi = anchor · EXPECTED_TIME_HI_FACTOR + n_stops · pit_loss · 1.15
+   + EXPECTED_TIME_SC_MARGIN_S
+if not lo ≤ expected_time ≤ hi:
+    logger.warning("strategy_envelope_clamp: …")
+    expected_time = clip(expected_time, lo, hi)
+    expected_time_clamped = True
+```
+
+Es **defensa en profundidad**: si las correcciones de §2.a y §2.b hacen
+su trabajo este clamp no debería disparar, pero los warnings dan
+visibilidad operativa de cualquier regresión (modelo nuevo, perfil
+contaminado, circuito nuevo). En el dataset baseline de Sakhir 2023 el
+spread de `expected_time` entre pilotos pasó de **139 min** (mediana
+1:25, min 0:57, max 3:16) a **6.2 min** (mediana 1:35, min 1:32,
+max 1:39) acumulando §2.a + §2.b + §7.2 (clamp en MC) + §8.5.
+
+### 8.6 Salida por estrategia
 
 Cada estrategia final lleva:
 
 - `strategy_id`: hash SHA-1 de `(year, circuit, driver, type, compounds,
   stints, stop_laps, pit_windows)` truncado a 16 caracteres.
-- `expected_time`, `variance`, `risk_score`.
+- `expected_time`, `expected_time_clamped` (bandera del §8.5),
+  `variance`, `risk_score`.
 - `stint_curves`: por stint, `lap_time_data` (curva Transformer) y
   `tyre_life_data` (vida normalizada 0-100% sobre la curva monotónica).
 - `stop_profitability`: lista de Δ por stop, calculada con las curvas

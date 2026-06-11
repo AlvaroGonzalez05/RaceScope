@@ -5,106 +5,208 @@
 \chapter{Resultados y Evaluación}
 \label{cap:resultados}
 
-% Párrafo introductorio: presentar la estructura del capítulo y el conjunto
-% de datos usado para la evaluación (temporada 2023, circuitos seleccionados).
-% Mencionar el entorno de ejecución (hardware, SO).
-
-\todo{Escribir párrafo de apertura del capítulo.}
+Este capítulo responde dos preguntas sobre \textit{RaceScope} en la temporada 2025: 1) cómo de cerca está el tiempo total predicho del tiempo real, piloto a piloto, a lo largo del calendario? 2) Si \textit{RaceScope} hubiera elegido las estrategias de Verstappen y Norris en cada carrera, ¿quién habría ganado el duelo directo? El apartado~\ref{sec:config_experimental} presenta la configuración, \ref{sec:eval_calibracion} evalúa la magnitud del error, \ref{sec:campeonato_ver_nor} simula el duelo VER–NOR y \ref{sec:aplicacion_web} describe la interfaz. Los resultados y limitaciones se discuten en el capítulo~\ref{cap:conclusiones}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Configuración experimental}
 \label{sec:config_experimental}
 
-% Guía:
-% - Datos: temporada F1 2023, N circuitos, M pilotos.
-% - Hardware: CPU, RAM, GPU (si aplica para entrenamiento Transformer).
-% - Hiperparámetros: context_laps=40, d_model=384, n_layers=8, n_heads=8,
-%   MC_TOP_K=3, n_sim=100, risk_lambda=0.15.
-% - División train/test: por sesión (carreras = test, FP = train).
-%   Justificación de la separación temporal para series temporales.
+La herramienta de computación es un portátil MacBook Pro con chip Apple M4 Pro (arquitectura arm64, 12 núcleos de CPU), \SI{24}{\giga\byte} de memoria unificada y macOS 26.5. La integración \needcite{Metal Performance Shaders (Apple Developer Documentation)} del chip está disponible pero el código no la activa: tanto el entrenamiento como la inferencia del Transformer se ejecutan en CPU, para mantener la trazabilidad numérica del experimento y la portabilidad del entorno entre máquinas sin GPU dedicada. 
 
-\todo{Escribir sección de configuración experimental.}
+El entorno de software fija Python 3.11.11, PyTorch 2.4 para el modelo de ritmo, FastAPI 0.115 para el servicio HTTP, React 18 y Vite 5 (sobre Node.js 24) para el cliente, y pandas 2.2 con numpy 1.26 para el procesamiento de datos tabulares. Todos los procesos aleatorios del sistema (\textit{rollout} Monte Carlo, muestreos de la distribución de práctica) se inicializan con una misma semilla fija para garantizar la reproducibilidad.
+
+El conjunto de entrenamiento usa las temporadas 2023 y 2024, descargadas de OpenF1 y procesadas con la \textit{pipeline} de ingesta y preprocesamiento descrita en el capítulo~\ref{cap:caso_estudio}. La temporada 2025 se reserva íntegramente como conjunto \textit{held-out}: ningún piloto, sesión o vuelta de 2025 entra en el entrenamiento. Para la evaluación se utilizan los modelos por defecto del sistema: \textbf{Transformer v3} entrenado por piloto con cabeza global de respaldo, y perfiles paramétricos lineales por piloto-circuito-compuesto.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section{Evaluación de los modelos de predicción de tiempos de vuelta}
-\label{sec:eval_modelos_pace}
+\section{Evaluación sobre la temporada 2025}
+\label{sec:eval_calibracion}
 
-% Guía:
-% - Métricas: MAE, RMSE en segundos (tras desnormalización).
-% - Comparativa: modelo específico del piloto vs. modelo global.
-% - Tabla de resultados por piloto (top 10 pilotos del campeonato).
-% - Tabla de resultados por circuito (street circuits vs. permanent circuits).
-% - Análisis de curvas de degradación predichas vs. reales (figuras).
-% - Discusión: cuándo falla el modelo (vueltas de pit-out, SC, vueltas cortas).
+La evaluación empieza por la pregunta de magnitud: ¿cuánto se acerca el tiempo total de carrera predicho por el motor al tiempo real, piloto a piloto, sobre la temporada 2025 completa? El conjunto evaluado son las 24 carreras del calendario para Norris (NOR), Piastri (PIA), Verstappen (VER) y Leclerc (LEC), con 94 emparejamientos válidos tras descartar las filas claramente afectadas por retirada (tiempo real inferior al 60\,\% de la mediana del circuito). La pregunta complementaria de clasificación piloto contra piloto, restringida al duelo Verstappen-Norris, se aborda en el apartado~\ref{sec:campeonato_ver_nor} y reutiliza los tiempos esperados obtenidos en esta evaluación como entrada.
 
-\todo{Escribir sección de evaluación de modelos de pace.}
+\subsection{Métricas y procedimiento}
+\label{ssec:eval_calibracion_metodo}
 
-% Tabla de resultados por piloto:
-% \begin{table}[H]
-% \centering
-% \caption{MAE y RMSE de los modelos Transformer por piloto sobre el conjunto de test
-%          (temporada 2023, carreras).}
-% \label{tab:resultados_transformer}
-% \begin{tabular}{lrrrr}
-%     \toprule
-%     \textbf{Piloto} & \textbf{Driver ID} & \textbf{Vueltas entren.}
-%                     & \textbf{MAE (s)} & \textbf{RMSE (s)} \\
-%     \midrule
-%     Max Verstappen  & 1   & 312 & -- & -- \\
-%     Sergio Pérez    & 11  & 298 & -- & -- \\
-%     Lewis Hamilton  & 44  & 287 & -- & -- \\
-%     \vdots          &     &     &    &    \\
-%     \textit{Global} & --  & --  & -- & -- \\
-%     \bottomrule
-% \end{tabular}
-% \end{table}
+Para cada par (piloto, carrera) se compara el tiempo total de la estrategia mejor clasificada por el motor con el tiempo real agregado a partir de las vueltas de carrera limpias del registro almacenado. El filtro de vueltas excluye las entradas y salidas de \textit{pit} y las vueltas tras un evento de \textit{safety car}, que distorsionarían la comparación. De esta pareja de tiempos se derivan dos métricas estándar de evaluación:
 
-% ─────────────────────────────────────────────────────────────────────────────
-\section{Validación del motor de estrategia}
-\label{sec:validacion_motor}
+\begin{itemize}
+    \item \textbf{MAPE} (\textit{Mean Absolute Percentage Error}): media del error absoluto relativo al tiempo real, expresada en porcentaje. \needcite{MAPE como métrica estándar de evaluación de pronósticos (Armstrong, Hyndman \& Koehler)}. Cuantifica la precisión sin sesgo de signo.
+    \item \textbf{Sesgo medio}: media del error firmado predicho\,$-$\,real en segundos. Su signo indica si el motor sobreestima (positivo) o subestima (negativo) el tiempo de carrera.
+\end{itemize}
 
-% Guía:
-% - Para un conjunto de carreras históricas de 2023:
-%   (1) Generar las top-5 estrategias con RaceScope.
-%   (2) Identificar la estrategia real usada por el ganador.
-%   (3) Medir en qué posición del ranking aparece la estrategia real.
-% - Tabla: circuito, estrategia real, posición en el ranking, expected_time.
-% - Discusión: ¿en qué carreras se equivoca RaceScope y por qué?
+\subsection{Resultados agregados}
+\label{ssec:eval_calibracion_resultados}
 
-\todo{Escribir sección de validación del motor de estrategia.}
+La figura~\ref{fig:eval_mape_bias} resume las dos métricas por piloto. El MAPE se mantiene entre el 13{,}5\,\% y el 14{,}6\,\% en los cuatro casos, con Leclerc como mejor calibrado y Piastri como el más alejado, separados por poco más de un punto porcentual. El sesgo medio es positivo y de magnitud similar en los cuatro pilotos, entre +636\,s y +692\,s: el motor sobreestima el tiempo total de carrera de manera sistemática, en una franja que para un Gran Premio de unos \SI{5400}{\second} representa entre el 11{,}8\,\% y el 12{,}8\,\% del tiempo real. La coincidencia en signo y orden de magnitud apunta a un sesgo del propio motor, no a ruido del \textit{rollout} Monte Carlo: si fuese ruido, los cuatro pilotos no compartirían la misma dirección y la misma magnitud.
+
+\begin{figure}[htbp]
+\centering
+\IfFileExists{Chapter5/images/mape_bias_summary.pdf}{%
+  \includegraphics[width=1\textwidth]{Chapter5/images/mape_bias_summary.pdf}%
+}{\rule{0pt}{4cm}}
+\caption{MAPE y sesgo medio del motor de predicción por piloto sobre las carreras evaluadas de 2025. Izquierda: precisión global. Derecha: sesgo calculado como media(predicho\,$-$\,real) en segundos.}
+\label{fig:eval_mape_bias}
+\end{figure}
+
+La figura~\ref{fig:eval_error_grid} desglosa el error firmado carrera a carrera, con un panel por piloto y los Grandes Premios ordenados según el calendario. La franja gris marca el margen $\pm$\SI{60}{\second} con el que el motor protege sus predicciones frente a un evento de \textit{safety car}; un error por encima de la banda indica que el sobrecoste predicho excede el margen previsto. 
+
+La forma de las cuatro series es casi idéntica entre pilotos: el sesgo positivo se mantiene a lo largo del calendario y los picos coinciden con los mismos circuitos. Melbourne y Spa concentran los errores más grandes, con valores que superan los \SI{1500}{\second}; son carreras con incidencias mayores en pista (bandera roja en Australia, lluvia intermitente en Spa) que reducen el tiempo real muy por debajo de la duración nominal y que el motor, diseñado bajo la hipótesis de carrera completa, no puede anticipar \needcite{clasificaciones oficiales FIA, temporada 2025}. Fuera de esos casos extremos, el error firmado se estabiliza por encima del cero pero debajo del techo del margen SC en la mayoría de las carreras.
+\begin{figure}[htbp]
+\centering
+\IfFileExists{Chapter5/images/error_signed_grid.pdf}{%
+  \includegraphics[width=\textwidth]{Chapter5/images/error_signed_grid.pdf}%
+}{\rule{0pt}{5cm}}
+\caption{Error predicho\,$-$\,real carrera a carrera para Norris, Piastri, Verstappen y Leclerc. Comparten el eje vertical. La franja gris marca el margen $\pm$\SI{60}{\second} aplicado por el motor frente a un evento de \textit{safety car}.}
+\label{fig:eval_error_grid}
+\end{figure}
+
+La concordancia de los cuatro pilotos en magnitud y signo confirma que el sesgo es atribuible al motor y no al piloto evaluado. Tres componentes plausibles lo explican: el margen de \SI{60}{\second} aplicado como protección frente a un \textit{safety car}, la elección del tiempo esperado como cuantil alto de la distribución Monte Carlo, y el filtro de vueltas limpias en el lado real, que descarta las entradas y salidas de \textit{pit} y las vueltas neutralizadas y rebaja por construcción la referencia. Diagnosticar la contribución relativa de cada componente queda fuera del alcance de este capítulo y se retoma en el apartado~\ref{sec:limitaciones} del capítulo de conclusiones.
+
+Las gráficas individuales por piloto, en formato \textit{dumbbell} de predicho frente a real y serie temporal del error firmado, se recogen en el anexo~\ref{ann:eval_calibracion}. Permiten contrastar el sesgo global con la evolución de un piloto concreto a lo largo del calendario y localizar los Grandes Premios en los que el motor se aleja del tiempo real.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section{Análisis de sensibilidad}
-\label{sec:analisis_sensibilidad}
+\section{Simulación del campeonato 2025: Verstappen vs Norris}
+\label{sec:campeonato_ver_nor}
 
-% Guía:
-% - Variación de \lambda (0.0, 0.05, 0.10, 0.15, 0.20, 0.25).
-% - Variación de pit_loss (20s, 22.5s, 25s, 28s).
-% - Variación de P(SC) (0.10, 0.20, 0.30).
-% - Variación de MC_TOP_K (3, 5, 8, 10) vs. n_sim (50, 100, 200, 500).
+Tras la lectura de magnitud del apartado anterior, esta sección reduce el alcance a una pregunta binaria: a partir de los tiempos esperados predichos por \textit{RaceScope} para los dos contendientes naturales del campeonato 2025, ¿el motor declara al mismo campeón que la temporada real? El sesgo común detectado en el apartado~\ref{sec:eval_calibracion} se cancela parcialmente al comparar dos pilotos: como afecta a ambos en magnitud y signo similares, lo que importa para la clasificación H2H no es cuánto se aleja cada predicción del tiempo real, sino cuánto se separa una predicción de la otra.
 
-\todo{Escribir sección de análisis de sensibilidad.}
+\subsection{Metodología}
+\label{ssec:metodologia_campeonato}
+
+Para cada Gran Premio de 2025 con datos disponibles se invoca el generador de estrategias sobre dos pilotos, Max Verstappen (VER) y Lando Norris (NOR), y se registra el tiempo esperado de la mejor estrategia para cada uno. Sobre estos tiempos se aplica la siguiente regla:
+
+\begin{itemize}
+    \item En cada carrera, el piloto con menor tiempo total recibe \textbf{25 puntos} (la asignación de F1 al ganador) y el otro recibe \textbf{18 puntos} (la asignación a la segunda posición), siguiendo el \needcite{reglamento deportivo FIA, sistema de puntos por Gran Premio}.
+    \item Se construyen dos tablas paralelas: la simulada, donde el tiempo es el predicho por \textit{RaceScope}; y la real, donde el tiempo es el agregado de las vueltas de carrera observadas en la sesión oficial.
+    \item Los puntos se acumulan a lo largo del calendario y la diferencia final declara al campeón en cada uno de los dos universos.
+\end{itemize}
+
+Esta regla mantiene la comparación justa: el sistema de puntos es idéntico en ambos lados, y la única variable que cambia entre la tabla simulada y la real es el origen del tiempo. Carreras con \textit{DNF} (tiempo real inferior a \SI{2000}{\second}, indicador de retirada temprana) se descartan del cómputo.
+
+\subsection{Resultados predichos y oficiales}
+\label{ssec:campeonato_resultados}
+
+La tabla~\ref{tab:campeonato_ver_nor} resume la cuenta final del campeonato bajo las dos perspectivas. La columna \textit{Concordancia H2H} reporta el porcentaje de carreras en las que el ganador predicho coincide con el real.
+
+\begin{table}[h]
+\centering
+\caption{Cuenta final del campeonato 2025 simulado (RaceScope) frente al resultado real, restringido al duelo Verstappen-Norris. Cada carrera asigna 25 puntos al ganador y 18 al segundo.}
+\label{tab:campeonato_ver_nor}
+\small
+\begin{tabularx}{\textwidth}{llrrcc}
+\toprule
+\textbf{Escenario} & \textbf{Campeón} & \textbf{VER} & \textbf{NOR} & \textbf{$\Delta$} & \textbf{ VER-NOR} \\
+\midrule
+Simulación RaceScope & VER          & 508 & 438 & 70 & 16-6  \\
+Resultado real (H2H) & Empate (NOR) & 473 & 473 & 0  & 11-11 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+El motor declara a Verstappen vencedor con 70 puntos de margen y un balance de 16 victorias frente a 6 sobre Norris. El balance real entre los dos pilotos es un empate exacto: 11 victorias cada uno y 473 puntos, escenario en el que el sistema de puntos H2H aquí adoptado no permite separar a un campeón sin un criterio adicional. Sobre las 22 carreras evaluadas, el ganador predicho por \textit{RaceScope} coincide con el ganador real del duelo en 11 de ellas, una concordancia del 50~\% indistinguible del lanzamiento de una moneda.
+
+Conviene situar la comparación en su contexto: no captura, ni pretende capturar, todo lo que decide una temporada real. La predicción de \textit{RaceScope} es \textit{a priori} y aislada por piloto; ignora los accidentes, las banderas rojas, la lluvia y la presencia de los otros 18 monoplazas, que en cada carrera fijan la posición real, los \needcite{\textit{undercuts} forzados como táctica de adelantamiento mediante parada anticipada} y la pérdida de tiempo por tráfico. 
+
+El motor sí modela explícitamente la incertidumbre de seguridad en pista: el \textit{rollout} Monte Carlo del Motor~2 sortea un evento de \textit{safety car} mediante una Bernoulli con probabilidad $P_\text{SC}$ derivada del contexto del Gran Premio y, cuando la parada planificada cae a menos de dos vueltas del evento, recorta hasta 8~s la pérdida efectiva de pit (\ref{ssec:motor2}). Es un modelado parcial pero no nulo, y la concordancia del 50~\% debe leerse con esta delimitación en mente: el sistema acierta sobre las decisiones estratégicas que dependen del ritmo y de la degradación, no sobre la resolución final del Gran Premio bajo el conjunto completo de incidencias.
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}[t]{\textwidth}
+  \centering
+  \IfFileExists{Chapter5/images/championship_ver_nor_real.pdf}{%
+    \includegraphics[width=\linewidth]{Chapter5/images/championship_ver_nor_real.pdf}%
+  }{\rule{0pt}{5cm}}
+  \caption{Resultados reales 2025: misma regla 25/18 aplicada al tiempo real agregado a partir de los tiempos de carrera observados.}
+  \label{fig:campeonato_real}
+\end{subfigure}
+
+\vspace{0.8em}
+
+\begin{subfigure}[t]{\textwidth}
+  \centering
+  \IfFileExists{Chapter5/images/championship_ver_nor_pred.pdf}{%
+    \includegraphics[width=\linewidth]{Chapter5/images/championship_ver_nor_pred.pdf}%
+  }{\rule{0pt}{5cm}}
+  \caption{Simulación predicha por \textit{RaceScope}: la regla 25/18 se aplica al tiempo esperado de la mejor estrategia generada para cada piloto.}
+  \label{fig:campeonato_pred}
+\end{subfigure}
+\caption{Evolución acumulada de los puntos de Verstappen y Norris bajo el sistema de puntos 25/18 por carrera. Eje horizontal: índice de carrera en orden cronológico del calendario 2025.}
+\label{fig:campeonato_pair}
+\end{figure}
+
+Las figuras~\ref{fig:campeonato_pred} y~\ref{fig:campeonato_real} muestran la evolución acumulada de los puntos de VER y NOR carrera por carrera. El eje horizontal sigue el orden cronológico real del calendario 2025, desde Melbourne (carrera~1) hasta Abu Dhabi (carrera~22), recuperado a partir de la fecha de inicio de cada Gran Premio en los metadatos de sesión.
+
+La diferencia entre ambas trayectorias señala los Grandes Premios en los que el motor predice un ganador distinto del real. La discusión en el apartado \ref{sec:discusion} interpreta el solapamiento global y los principales puntos de divergencia.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section{Rendimiento del sistema}
-\label{sec:rendimiento_sistema}
+\section{Aplicación web}
+\label{sec:aplicacion_web}
 
-% Guía:
-% - Resultados del benchmark_strategy.py: latencias cold, warm, hot.
-% - Tamaño de los modelos (.joblib): tamaño medio por piloto, total.
-% - Tamaño de la caché de curvas de pace.
-% - ¿Cumple el sistema el requisito de latencia < 2s en régimen caliente?
+La aplicación web es la cara visible de \textit{RaceScope}, la capa donde las decisiones del motor se convierten en una experiencia consultable por una persona. Su diseño parte de una premisa: el usuario no quiere ver el modelo, quiere ver una estrategia y comparar dos pilotos sobre la misma carrera. Todo lo demás se ha procurado mantener fuera de su camino.
 
-\todo{Escribir sección de rendimiento del sistema.}
+\subsection{Estructura de navegación}
+\label{ssec:web_pestanas}
 
-% ─────────────────────────────────────────────────────────────────────────────
-\section{Discusión}
-\label{sec:discusion}
+La cabecera presenta cuatro pestañas ordenadas según la temporalidad de la información que ofrecen sobre un Gran Premio concreto: \textbf{Home} como punto de entrada, \textbf{Pre-race} para la decisión antes del semáforo verde, \textbf{Live} para el seguimiento durante la carrera y \textbf{Rewatch} para la lectura post-mortem. Solo las dos primeras están implementadas en el prototipo actual (tabla~\ref{tab:web_pestanas}); las otras dos se reservan como continuación natural del trabajo. Exponerlas como espacios pendientes, en lugar de esconderlas bajo descripciones futuras, comunica el alcance previsto del producto sin disfrazarlo.
 
-% Guía:
-% - ¿Qué aporta RaceScope frente a trabajos relacionados
-%  ?
-% - Limitaciones actuales del sistema.
-% - ¿En qué condiciones es más/menos fiable?
+\begin{table}[htbp]
+\centering
+\caption{Pestañas de la aplicación web y su propósito.}
+\label{tab:web_pestanas}
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Pestaña} & \textbf{Estado} & \textbf{Propósito} \\
+\midrule
+Home      & Implementada & Punto de entrada y presentación del sistema. \\
+Pre-race  & Implementada & Análisis pre-carrera para uno o dos pilotos. \\
+Live      & Pendiente    & Análisis en directo durante la carrera. \\
+Rewatch   & Pendiente    & Reproducción analítica post-carrera. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-\todo{Escribir sección de discusión.}
+\subsection{Diseño visual}
+\label{ssec:web_ui}
+
+La interfaz adopta el modo oscuro por defecto. Es la convención dominante en herramientas de análisis y de monitorización deportiva: reduce la fatiga ocular en sesiones largas de mirada fija, deja respirar a los datos saturados de color (compuestos rojos, amarillos, grises claros) y evoca el muro de boxes real, donde los paneles se mantienen en baja luminancia para no interferir con la visión durante carreras nocturnas o crepusculares. Un único color de acento, un naranja saturado tomado de la identidad de \textit{RaceScope}, aparece reservado para la acción primaria (el botón \textbf{Calcular}) y los marcadores que el usuario debe encontrar de un vistazo. El principio operante es escasez: \needcite{el color de acento sólo conserva su capacidad de atraer la mirada si se administra como recurso limitado}.
+
+Los compuestos de neumático adoptan los colores que el aficionado a la Fórmula~1 ya reconoce: rojo para el blando, amarillo para el medio y gris claro para el duro. Esta convención compartida con la propia FIA reduce a cero la carga cognitiva del aprendizaje de la leyenda. La misma paleta se replica entre la tira de estrategias y el gráfico de curvas de ritmo, de modo que el lazo visual entre la estrategia y su curva es inmediato. El principio que opera aquí es el de coherencia: un mismo concepto debe presentarse con el mismo signo visual en cualquier lugar de la interfaz, para que el ojo no tenga que traducir.
+
+El usuario puede conmutar al tema claro con un control en la cabecera, y la aplicación recuerda la preferencia entre sesiones. La internacionalización es funcional, con español como idioma por defecto y un conmutador a inglés en la misma zona; la elección queda preservada también entre visitas. Los dos controles ocupan posiciones idénticas y vecinas, comunicando que pertenecen al mismo registro: ajustes de presentación, no de contenido.
+
+\begin{figure}[htbp]
+\centering
+\rule{0pt}{4cm}
+\caption{Sección héroe del \textit{landing} de \textit{RaceScope}, con titular, llamada a la acción y vista previa animada de curvas de ritmo.}
+\label{fig:cap5_landing_hero}
+\end{figure}
+
+\subsection{Recorrido del usuario}
+\label{ssec:web_ux}
+
+La pestaña Pre-race concentra el caso de uso principal y se estructura como una secuencia lineal de cuatro momentos.
+
+\textbf{Primero, el contexto.} Año, circuito y selección de pilotos se sitúan en una zona aireada en la parte superior, donde la mirada cae de forma natural siguiendo el patrón F de lectura occidental \needcite{F-pattern de Nielsen}. Un único botón, \textbf{Calcular}, actúa como disparador. Su posición y tamaño se han elegido para minimizar el coste de acceso, una lectura local del principio de \needcite{Fitts}: es el único control destacado de la pantalla en estado inicial, evitando la ambigüedad de un panel con varios botones de aspecto comparable.
+
+\textbf{Segundo, la espera.} Mientras el motor procesa la petición, las filas de piloto adoptan una micro-animación de carga sin reorganizar la estructura final. El usuario sabe a dónde llegará el resultado antes de que llegue. Esta continuidad espacial es lo que distingue una espera tolerable de una espera ansiosa: la incertidumbre se reduce a la dimensión del tiempo, no a la del lugar.
+
+\textbf{Tercero, el resultado primario.} Cada piloto presenta sus cinco estrategias como un carrusel horizontal de píldoras ordenadas por tiempo esperado. La limitación a cinco no es estética. La ley de Hick \needcite{Hick-Hyman} relaciona el tiempo de decisión con el logaritmo del número de opciones; rebasar ese umbral en una pantalla saturada deteriora la capacidad del usuario para elegir. Cada píldora se condensa a tres unidades visuales: el tipo de plan, los compuestos como puntos de color en orden cronológico y el delta de tiempo respecto a la mejor opción. Tres datos suficientes para una decisión informada sin obligar al usuario a leer texto.
+
+\textbf{Cuarto, el detalle profundo.} Al pulsar una píldora, un gráfico de curva de ritmo despliega vuelta a vuelta lo que la estrategia significa en pista. Los \textit{stints} aparecen como polilíneas continuas coloreadas por compuesto, y las ventanas de \textit{pit} se proyectan como bandas verticales semitransparentes. Un indicador dinámico aparece bajo el cursor con la lectura precisa de la vuelta enfocada. Esta separación entre vista resumen y vista detalle es el patrón habitual de \textit{progressive disclosure} \needcite{Nielsen, progressive disclosure}: la información se muestra cuando el usuario indica explícitamente que la quiere, no antes.
+
+La doble fila de filas de piloto, dispuesta lado a lado, materializa el caso de uso \textit{head-to-head}: dos pilotos en idéntico contexto, ocupando porciones simétricas del \textit{viewport}, con cada análisis sirviendo de referencia visual para el otro. El paralelismo espacial refuerza el paralelismo conceptual y permite la comparación directa sin que la mirada tenga que recordar lo que vio un segundo antes.
+
+\begin{figure}[htbp]
+\centering
+\rule{0pt}{4cm}
+\caption{Vista comparativa Pre-race con las dos filas de piloto lado a lado tras pulsar Calcular (caso VER vs NOR).}
+\label{fig:cap5_prerace_dual}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\rule{0pt}{4cm}
+\caption{Gráfico de curva de ritmo: polilíneas por \textit{stint} coloreadas por compuesto, bandas de ventana de \textit{pit} y lectura dinámica por vuelta bajo el cursor.}
+\label{fig:cap5_curve_chart}
+\end{figure}
+

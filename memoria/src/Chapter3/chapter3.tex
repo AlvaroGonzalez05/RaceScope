@@ -11,22 +11,22 @@ Este capítulo presenta la visión arquitectónica de \textit{RaceScope}: qué c
 \section{Visión general del sistema}
 \label{sec:vision_general}
 
-\textit{RaceScope} es un sistema \textit{end-to-end} de exploración de estrategias de carrera que combina aprendizaje profundo, modelado paramétrico y simulación estocástica para generar y rankear estrategias de pit stop previas a una carrera. La Figura~\ref{fig:arquitectura_sistema} muestra los seis bloques funcionales del sistema y los flujos de datos que los conectan, desde las fuentes de OpenF1 hasta la presentación de resultados al usuario.
+\textit{RaceScope} es un sistema \textit{end-to-end} de exploración de estrategias de carrera que combina aprendizaje profundo, modelado paramétrico y simulación estocástica para generar y rankear estrategias de pit stop previas a una carrera. La Figura~\ref{fig:arquitectura_sistema} muestra los seis bloques funcionales del sistema y los flujos de datos que los conectan, desde la fuente pública de OpenF1 hasta la aplicación web que entrega los resultados al usuario.
 
 Los seis bloques que componen el sistema son los siguientes:
 
 \begin{enumerate}
-    \item \textbf{Fuentes de datos (\needcite{OpenF1 API}).} La API pública de OpenF1 proporciona tiempos de vuelta, stints y compuestos de neumático, y datos meteorológicos de sesión mediante endpoints REST.
+    \item \textbf{Fuente de datos: \needcite{OpenF1}.} API pública que proporciona tiempos de vuelta, stints y compuestos de neumático, telemetría del vehículo y datos meteorológicos por sesión.
 
-    \item \textbf{Ingestión y preprocesamiento.} Un pipeline Python descarga los datos sesión a sesión, los valida y los transforma en una \textit{feature store} columnar en formato \needcite{Apache Parquet}.
+    \item \textbf{Ingestión y preprocesamiento.} Un \textit{pipeline} Python descarga los datos sesión a sesión, los valida y los transforma en una \textit{feature store} columnar en formato \needcite{Apache Parquet}.
 
-    \item \textbf{Modelo de pace Transformer.} Un encoder de atención multi-cabeza entrenado por piloto predice el tiempo de vuelta a partir de una ventana de contexto de 40 vueltas. Un modelo global actúa de respaldo para pilotos con datos insuficientes.
+    \item \textbf{Perfil paramétrico de piloto.} Modelo de regresión lineal con cuatro coeficientes que captura la degradación de neumáticos por piloto, circuito y compuesto, con jerarquía de \textit{fallback} de cuatro niveles. Alimenta al Motor~1.
 
-    \item \textbf{Perfil paramétrico de piloto.} Un modelo de regresión lineal con cuatro coeficientes captura la degradación de neumáticos por piloto, circuito y compuesto, con jerarquía de \textit{fallback} de cuatro niveles.
+    \item \textbf{Modelo de ritmo Transformer.} Encoder de atención multi-cabeza entrenado por piloto que predice el tiempo de vuelta a partir de una ventana de contexto de 40 vueltas, con un modelo global de respaldo para pilotos con datos insuficientes. Alimenta al Motor~2.
 
-    \item \textbf{Motor de estrategia con tres motores que colaboran.} El perfil lineal resuelve la vuelta óptima de pit por break-even cerrado; el Transformer predice las curvas de ritmo y refina las $K$ mejores candidatas por Monte Carlo; un optimizador de cartera estratégica ordena el conjunto con un criterio media-varianza.
+    \item \textbf{Motor de estrategia con tres motores que colaboran.} El perfil paramétrico resuelve la vuelta óptima de pit por \textit{break-even} cerrado (Motor~1); el Transformer refina las $K$ mejores candidatas por Monte Carlo (Motor~2); un optimizador de cartera estratégica ordena el conjunto con un criterio media-varianza (Motor~3). Una cota de validez física, derivada de la envoltura empírica del circuito, acota la salida del motor antes de exponerla.
 
-    \item \textbf{API REST y aplicación web.} Una API FastAPI expone los resultados a una SPA React~+~Vite, que los presenta con visualizaciones interactivas de curvas de ritmo y tiras de estrategia.
+    \item \textbf{API y aplicación web.} Una API FastAPI expone el resultado del motor a una SPA React~+~Vite, que lo presenta con un carrusel de estrategias y visualizaciones interactivas de curvas de ritmo y ventanas de pit.
 \end{enumerate}
 
 \begin{figure}[htbp]
@@ -34,103 +34,103 @@ Los seis bloques que componen el sistema son los siguientes:
 \begingroup
 \shorthandoff{<>}
 \begin{tikzpicture}[
-  databox/.style  = {draw, rounded corners=3pt, text width=3.5cm,
-                     minimum height=0.75cm, align=center, fill=white, font=\small},
-  srcbox/.style   = {draw, rounded corners=3pt, text width=2.6cm,
-                     minimum height=0.75cm, align=center, fill=white, font=\small},
-  widebox/.style  = {draw, rounded corners=3pt, text width=9.0cm,
-                     minimum height=0.9cm,  align=center, fill=white, font=\small},
-  modelbox/.style = {draw, rounded corners=3pt, text width=3.4cm,
-                     minimum height=0.75cm, align=center, fill=white, font=\small},
-  halfbox/.style  = {draw, rounded corners=3pt, text width=4.0cm,
-                     minimum height=0.85cm, align=center, fill=white, font=\small},
-  outbox/.style   = {draw, rounded corners=3pt, text width=2.7cm,
-                     minimum height=0.75cm, align=center, fill=white, font=\small},
-  dgrp/.style     = {draw, dashed, rounded corners=6pt, inner sep=0.5cm},
-  arr/.style      = {->, thick, >=stealth},
-  lin/.style      = {thick},
+  font=\sffamily,
+  src/.style    = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  pipe/.style   = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  model/.style  = {draw, rounded corners=3pt, text width=4.7cm,
+                   minimum height=1.6cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  motor/.style  = {draw, rounded corners=3pt, text width=4.7cm,
+                   minimum height=1.6cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  motor3/.style = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.2cm, align=center, fill=white, font=\small,
+                   line width=0.7pt},
+  clamp/.style  = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt, densely dashed},
+  outbox/.style = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=0.9cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  arr/.style    = {->, >=stealth, line width=0.55pt},
 ]
 
-%% ── GRUPO 1: Datos de entrada ─────────────────────────────────────────────
-\node[databox] (lap)   at (-2.6,  0.00) {Tiempos de vuelta};
-\node[databox] (stint) at (-2.6, -1.10) {Stints y compuestos};
-\node[databox] (meteo) at (-2.6, -2.20) {Meteorología};
+%% Source
+\node[src] (openf1) at (0, 0)
+     {\textbf{Fuente de datos: OpenF1} (API pública)\\[1pt]
+      \footnotesize Tiempos de vuelta · Stints y compuestos · Telemetría · Meteorología};
 
-\node[srcbox] (src1) at (2.6,  0.00) {\texttt{/v1/laps}};
-\node[srcbox] (src2) at (2.6, -1.10) {\texttt{/v1/stints}};
-\node[srcbox] (src3) at (2.6, -2.20) {\texttt{/v1/weather}};
+%% Pipeline
+\node[pipe] (pipe) at (0, -2.0)
+     {\textbf{Ingestión y preprocesamiento}\\[1pt]
+      \footnotesize \textit{Feature store} columnar particionada por temporada y sesión};
+\draw[arr] (openf1.south) -- (pipe.north);
 
-\draw[arr] (src1.west) -- (lap.east);
-\draw[arr] (src2.west) -- (stint.east);
-\draw[arr] (src3.west) -- (meteo.east);
+%% Two models in parallel
+\node[model] (prof)  at (-2.9, -4.5)
+     {\textbf{Perfil paramétrico}\\[1pt]
+      \footnotesize Regresión lineal por\\
+      \footnotesize piloto, circuito y compuesto\\
+      \footnotesize \textit{Fallback} de 4 niveles};
+\node[model] (trans) at ( 2.9, -4.5)
+     {\textbf{Transformer v3}\\[1pt]
+      \footnotesize Encoder de atención\\
+      \footnotesize Por piloto + cabeza global\\
+      \footnotesize Contexto de 40 vueltas};
 
-\node[draw, rounded corners=10pt, text width=6.0cm, minimum height=0.7cm,
-      align=center, font=\small\itshape]
-      (openf1lbl) at (0, -3.40)
-      {OpenF1 API: código abierto};
+\draw[arr] (pipe.south) -- ++(0,-0.4) -| (prof.north);
+\draw[arr] (pipe.south) -- ++(0,-0.4) -| (trans.north);
 
-\node[dgrp, fit=(lap)(stint)(meteo)(src1)(src2)(src3)(openf1lbl),
-      label={[font=\bfseries\small]above:Datos de entrada}] (G1) {};
+%% Motors 1 and 2 in parallel
+\node[motor] (motor1) at (-2.9, -7.4)
+     {\textbf{Motor 1}\\[1pt]
+      \footnotesize Resolución analítica\\
+      \footnotesize \textit{Break-even} cerrado\\
+      \footnotesize Filtro de rentabilidad};
+\node[motor] (motor2) at ( 2.9, -7.365)
+     {\textbf{Motor 2}\\[1pt]
+      \footnotesize Refinamiento Monte Carlo\\
+      \footnotesize \textit{Rollout} autoregresivo\\
+      \footnotesize Top-$K$ candidatas};
 
-%% ── PIPELINE ──────────────────────────────────────────────────────────────
-\node[widebox] (pipe) at (0, -5.60)
-     {\textbf{Ingestión y preprocesamiento}\\[2pt]
-      {\footnotesize\textit{Feature Store}: Apache Parquet}};
-\draw[arr] (G1.south) -- (pipe.north);
+\draw[arr] (prof.south)  -- (motor1.north);
+\draw[arr] (trans.south) -- (motor2.north);
 
-%% ── MODELO TRANSFORMER ────────────────────────────────────────────────────
-\node[modelbox] (l1) at (-3.0, -7.50) {\textbf{Modelo de pace Transformer}};
-\node[modelbox] (l2) at (-3.0, -8.40) {Atención multi-cabeza};
-\node[modelbox] (l3) at (-3.0, -9.30) {Por piloto + global};
-\node[dgrp, fit=(l1)(l2)(l3)] (GL) {};
+%% Motor 3
+\node[motor3] (motor3) at (0, -9.7)
+     {\textbf{Motor 3} · Optimizador de cartera estratégica\\[1pt]
+      \footnotesize Criterio media-varianza · Agrupación por ventanas de \textit{pit}};
+\draw[arr] (motor1.south) -- ++(0,-0.4) -| (motor3.north);
+\draw[arr] (motor2.south) -- ++(0,-0.4) -| (motor3.north);
 
-%% ── PERFIL PARAMÉTRICO ───────────────────────────────────────────────────
-\node[modelbox] (p1) at (3.0, -7.50) {\textbf{Perfil Paramétrico}};
-\node[modelbox] (p2) at (3.0, -8.40) {Regresión lineal (OLS)};
-\node[modelbox] (p3) at (3.0, -9.30) {Fallback de 4 niveles};
-\node[dgrp, fit=(p1)(p2)(p3)] (GP) {};
+%% Safety envelope
+\node[clamp] (clamp) at (0, -11.5)
+     {\textbf{Cota de validez física}\\[1pt]
+      \footnotesize Envoltura empírica del circuito
+      
+      \footnotesize Acotación del ritmo y del tiempo total};
+\draw[arr] (motor3.south) -- (clamp.north);
 
-%% Flechas: pipeline → grupos (bifurcación)
-\draw[arr] (pipe.south) -- ++(0,-0.55) -| (GL.north);
-\draw[arr] (pipe.south) -- ++(0,-0.55) -| (GP.north);
+%% Output stack
+\node[outbox] (api) at (0, -13.2)
+     {\textbf{API REST (FastAPI)}
+     
+     Petición pre-carrera por piloto};
+\node[outbox] (web) at (0, -14.7)
+     {\textbf{Aplicación web (React + Vite)}
 
-%% ── MOTOR DE ESTRATEGIA ───────────────────────────────────────────────────
-\node[widebox] (motor) at (0, -11.20)
-     {\textbf{Motor de estrategia (tres motores)}};
+      Carrusel de estrategias y curvas de ritmo};
 
-%% Flechas: grupos → motor (fusión en Y)
-\coordinate (motorin) at (0, -10.55);
-\draw[lin] (GL.south) -- ++(0,-0.20) -| (motorin);
-\draw[lin] (GP.south) -- ++(0,-0.20) -| (motorin);
-\draw[arr] (motorin) -- (motor.north);
-
-%% ── MOTORES ───────────────────────────────────────────────────────────────
-\node[halfbox] (f1) at (-4.60, -12.70) {Motor 1\\Break-even cerrado};
-\node[halfbox] (f2) at ( 0.00, -12.70) {Motor 2\\Transformer + MC};
-\node[halfbox] (f3) at ( 4.60, -12.70) {Motor 3\\Cartera riesgo-recompensa};
-
-%% Flechas: motor → motores internos (bifurcación)
-\draw[arr] (motor.south) -- ++(0,-0.40) -| (f1.north);
-\draw[arr] (motor.south) -- ++(0,-0.40) -| (f2.north);
-\draw[arr] (motor.south) -- ++(0,-0.40) -| (f3.north);
-
-%% ── SALIDA AL USUARIO ─────────────────────────────────────────────────────
-\node[outbox] (o1) at (-3.20, -14.70) {API REST\\FastAPI};
-\node[outbox] (o2) at ( 0,    -14.70) {Web App\\React + Vite};
-\node[outbox] (o3) at ( 3.20, -14.70) {Estrategias\\rankeadas};
-\node[dgrp, fit=(o1)(o2)(o3),
-      label={[font=\bfseries\small]below:Salida al usuario}] (G4) {};
-
-%% Flechas: motores → salida (fusión en Y)
-\coordinate (outin) at (0, -13.60);
-\draw[lin] (f1.south) -- ++(0,-0.20) -| (outin);
-\draw[lin] (f2.south) -- ++(0,-0.20) -| (outin);
-\draw[lin] (f3.south) -- ++(0,-0.20) -| (outin);
-\draw[arr] (outin) -- (G4.north);
+\draw[arr] (clamp.south) -- (api.north);
+\draw[arr] (api.south)   -- (web.north);
 
 \end{tikzpicture}
 \endgroup
-\caption{Arquitectura general del sistema \textit{RaceScope}: flujo de datos desde OpenF1 hasta las estrategias rankeadas. Elaboración propia.}
+\caption{Arquitectura de \textit{RaceScope}: flujo de datos desde OpenF1 hasta la API y la aplicación web. Incluye ingesta, dos modelos de ritmo (perfil paramétrico y Transformer), tres motores de estrategia y una cota de validez física. Elaboración propia.}
 \label{fig:arquitectura_sistema}
 \end{figure}
 
@@ -143,6 +143,6 @@ El sistema opera en torno a dos pipelines bien diferenciados que separan el trab
 
 El \textbf{pipeline offline} (entrenamiento) se ejecuta una sola vez por temporada: ingesta los datos de OpenF1, construye la \textit{feature store}, entrena los modelos Transformer por piloto y ajusta los perfiles paramétricos. Este pipeline puede tardar varios minutos y se ejecuta como proceso independiente antes de arrancar el servidor.
 
-El \textbf{pipeline online} (inferencia) responde a cada petición de estrategia: carga los modelos entrenados, construye el contexto de carrera, genera las candidatas por break-even cerrado a partir del perfil lineal, las ordena con el optimizador de cartera estratégica y refina las $K$ mejores con el Transformer en simulación Monte Carlo. El diseño de caché multinivel (predicciones del Transformer en \texttt{lru\_cache}, curvas de ritmo en Parquet con TTL de 24~h, respuestas completas en memoria) mantiene la latencia bajo unos pocos segundos en el régimen caliente.
+El \textbf{pipeline online} (inferencia) responde a cada petición de estrategia: carga los modelos entrenados, construye el contexto de carrera, genera las candidatas por break-even cerrado a partir del perfil lineal, las ordena con el optimizador de cartera estratégica y refina las $K$ mejores con el Transformer en simulación Monte Carlo. El diseño de caché multinivel (predicciones del Transformer en memoria con política LRU, curvas de ritmo en disco con TTL de 24~h, respuestas completas en memoria) mantiene la latencia bajo unos pocos segundos en el régimen caliente.
 
-Adicionalmente, el sistema soporta dos modos de datos: \textbf{modo snapshot} (por defecto), que sirve el histórico local ya procesado; y \textbf{modo live}, que consulta OpenF1 en tiempo real con caída automática a snapshot si la API no está disponible.
+Adicionalmente, el sistema soporta dos modos de datos: \textbf{modo snapshot} (por defecto), que sirve el histórico local ya procesado; y \textbf{modo live}, que consultaría OpenF1 en tiempo real con caída automática al snapshot si la API no está disponible.

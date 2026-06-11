@@ -61,6 +61,12 @@ def _extract_actual_strategy(
     """
     Reconstruct the actual strategy for a driver from race features.
 
+    The `stint_number` column in the gold layer is corrupted (always 1.0 for the
+    whole race). We reconstruct stints from two reliable signals that the
+    preprocessor *does* compute correctly:
+      - `stint_age == 1` marks the first lap of a stint.
+      - A change in `compound` from the previous lap also marks a new stint.
+
     Returns a dict with keys: compounds (list[str]), stint_lengths (list[int]),
     stop_laps (list[int]), actual_race_time (float).
     Returns None if data is insufficient.
@@ -69,14 +75,24 @@ def _extract_actual_strategy(
     if drv.empty or "compound" not in drv.columns:
         return None
 
-    drv = drv.sort_values("lap_number")
-    # Only "normal" laps for race time calculation
-    normal = drv[drv["lap_type"].isin({"normal", "pit_out", "pit_in"})] if "lap_type" in drv.columns else drv
+    drv = drv.sort_values("lap_number").reset_index(drop=True)
+
+    # Stint boundary heuristic: new stint if stint_age resets to 1 OR compound changes.
+    compound_norm = drv["compound"].astype(str).str.upper()
+    age = drv["stint_age"] if "stint_age" in drv.columns else None
+    new_stint = pd.Series(False, index=drv.index)
+    new_stint.iloc[0] = True
+    for i in range(1, len(drv)):
+        cond_age = (age is not None and float(age.iloc[i]) == 1.0)
+        cond_compound = compound_norm.iloc[i] != compound_norm.iloc[i - 1]
+        if cond_age or cond_compound:
+            new_stint.iloc[i] = True
+    drv["_stint_idx"] = new_stint.cumsum()
 
     stints = (
-        normal.groupby("stint_number")
+        drv.groupby("_stint_idx")
         .agg(
-            compound=("compound", lambda x: x.mode()[0] if not x.empty else "UNKNOWN"),
+            compound=("compound", lambda x: str(x.mode().iloc[0]).upper() if not x.empty else "UNKNOWN"),
             stint_len=("lap_number", "count"),
             start_lap=("lap_number", "min"),
         )
@@ -85,11 +101,16 @@ def _extract_actual_strategy(
     if stints.empty:
         return None
 
-    compounds = stints["compound"].str.upper().tolist()
-    stint_lengths = stints["stint_len"].tolist()
-    stop_laps = stints["start_lap"].tolist()[1:]  # pit lap = first lap of each non-opening stint
+    compounds = stints["compound"].tolist()
+    stint_lengths = stints["stint_len"].astype(int).tolist()
+    stop_laps = [int(s) for s in stints["start_lap"].tolist()[1:]]  # first lap of each non-opening stint
 
-    actual_race_time = float(normal["lap_time"].sum()) if not normal.empty else float("nan")
+    # Race time aggregated over real race laps only (drop in/out outliers to keep totals comparable).
+    if "lap_type" in drv.columns:
+        race_laps = drv[drv["lap_type"].isin({"normal"})]
+    else:
+        race_laps = drv
+    actual_race_time = float(race_laps["lap_time"].sum()) if not race_laps.empty else float("nan")
 
     return {
         "compounds": compounds,
@@ -167,6 +188,8 @@ def _pace_errors(
 def evaluate(
     target_drivers: Optional[List[int]] = None,
     output_path: str = "evaluation_2025.csv",
+    max_races: Optional[int] = None,
+    debug_dump: bool = False,
 ) -> pd.DataFrame:
     from app.data_store import load_features
     from app.strategy_engine import StrategyEngine
@@ -197,11 +220,27 @@ def evaluate(
         drivers_to_eval = all_drivers
 
     circuits = sorted(race_2025["circuit_id"].dropna().unique().tolist())
-    logger.info(
-        "evaluate_2025: drivers=%s  circuits=%d", drivers_to_eval, len(circuits)
+    if max_races is not None:
+        circuits = circuits[:max_races]
+    print(
+        f"[evaluate_2025] drivers={drivers_to_eval} circuits={len(circuits)} "
+        f"max_races={max_races} debug={debug_dump}",
+        flush=True,
     )
 
     rows: List[Dict] = []
+
+    id_to_code = (
+        race_2025[["driver_id", "driver_code"]]
+        .dropna()
+        .drop_duplicates()
+        .set_index("driver_id")["driver_code"]
+        .to_dict()
+    )
+
+    total_combos = len(circuits) * len(drivers_to_eval)
+    done = 0
+    import time as _time
 
     for circuit_id in circuits:
         race_circ = race_2025[race_2025["circuit_id"] == circuit_id]
@@ -209,25 +248,34 @@ def evaluate(
             continue
 
         for driver_id in drivers_to_eval:
+            done += 1
             actual = _extract_actual_strategy(race_circ, driver_id)
             if actual is None:
-                logger.debug("circuit=%s driver=%s — no actual data, skipping.", circuit_id, driver_id)
+                print(f"[{done}/{total_combos}] {circuit_id:15s} drv={driver_id:>3}  SKIP (no actual)", flush=True)
                 continue
 
+            driver_code = id_to_code.get(driver_id)
+            if driver_code is None:
+                print(f"[{done}/{total_combos}] {circuit_id:15s} drv={driver_id:>3}  SKIP (no code)", flush=True)
+                continue
+
+            t0 = _time.time()
             try:
                 result = engine.generate_strategies(
                     year=2025,
                     circuit_id=circuit_id,
-                    driver_id=driver_id,
+                    driver_code=driver_code,
                     n_strategies=5,
                 )
                 strategies = result.get("strategies", [])
             except Exception as exc:
-                logger.warning(
-                    "circuit=%s driver=%s generate_strategies failed: %s",
-                    circuit_id, driver_id, exc,
+                print(
+                    f"[{done}/{total_combos}] {circuit_id:15s} drv={driver_id:>3} ({driver_code})  "
+                    f"generate_strategies FAILED: {exc}",
+                    flush=True,
                 )
                 strategies = []
+            dt = _time.time() - t0
 
             drv_race = race_circ[race_circ["driver_id"] == driver_id]
             mae, rmse = _pace_errors(strategies, drv_race)
@@ -255,12 +303,27 @@ def evaluate(
             }
             rows.append(row)
 
-            logger.info(
-                "circuit=%-15s driver=%3d  match=%s  mae=%s  time_err=%s",
-                circuit_id, driver_id, match,
-                f"{mae:.3f}" if not np.isnan(mae) else "N/A",
-                f"{time_error:+.1f}" if not np.isnan(time_error) else "N/A",
+            print(
+                f"[{done}/{total_combos}] {circuit_id:15s} drv={driver_id:>3} ({driver_code})  "
+                f"t={dt:5.1f}s  match={str(match):5s}  mae={mae:7.3f}  time_err={time_error:+8.1f}s  "
+                f"n_pred={len(strategies)}",
+                flush=True,
             )
+
+            if debug_dump:
+                pred_compact = []
+                for k, s in enumerate(strategies[:3]):
+                    pred_compact.append(
+                        f"  pred[{k}] compounds={s.get('compounds')} "
+                        f"stops={s.get('stop_laps')} exp_t={s.get('expected_time'):.1f}"
+                    )
+                print(
+                    f"  actual compounds={actual['compounds']} "
+                    f"stints={actual['stint_lengths']} stops={actual['stop_laps']} "
+                    f"race_time={actual['actual_race_time']:.1f}s",
+                    flush=True,
+                )
+                print("\n".join(pred_compact), flush=True)
 
     df_out = pd.DataFrame(rows)
     out_file = Path(output_path)
@@ -409,13 +472,30 @@ def main() -> None:
         default="SOFT",
         help="Compound for push-sensitivity test (default: SOFT).",
     )
+    parser.add_argument(
+        "--max-races",
+        type=int,
+        default=None,
+        help="Cap the number of circuits processed (debug/iteration).",
+    )
+    parser.add_argument(
+        "--debug-dump",
+        action="store_true",
+        default=False,
+        help="Print actual vs predicted strategies after each combo.",
+    )
     args = parser.parse_args()
 
     target_drivers = None
     if args.drivers:
         target_drivers = [int(d.strip()) for d in args.drivers.split(",") if d.strip()]
 
-    evaluate(target_drivers=target_drivers, output_path=args.output)
+    evaluate(
+        target_drivers=target_drivers,
+        output_path=args.output,
+        max_races=args.max_races,
+        debug_dump=args.debug_dump,
+    )
 
     if args.push_sensitivity_test:
         result = push_sensitivity_test(
