@@ -82,7 +82,7 @@ El modelo de predicción de tiempos de vuelta resuelve un problema de \textbf{re
 \subsection{Arquitectura Transformer}
 \label{ssec:arquitectura_transformer}
 
-El modelo es un \needcite{encoder Transformer Pre-LN} entrenado de forma específica por piloto. Su arquitectura se organiza en cinco bloques:
+El modelo es un encoder Transformer Pre-LN \cite{vaswani2017attention} entrenado de forma específica por piloto. Su arquitectura se organiza en cinco bloques:
 
 \begin{enumerate}
     \item \textbf{Embeddings categóricos por paso temporal.} Los tres identificadores discretos del paso temporal (compuesto, tipo de vuelta y tipo de sesión) se proyectan a embeddings de 24, 8 y 8 dimensiones, respectivamente. El identificador de circuito, estático por secuencia, aporta un embedding adicional de 48 dimensiones replicado a lo largo de la ventana.
@@ -128,7 +128,7 @@ La inferencia denormaliza el delta predicho y lo añade a la mediana de referenc
 La configuración descrita en \ref{ssec:arquitectura_transformer} es la cuarta iteración de una familia de modelos de predicción de ritmo que comenzó con una red recurrente por piloto. Cada salto resuelve una limitación concreta de la versión anterior; las variantes intermedias se conservan como ruta de respaldo para los modelos serializados de versiones anteriores.
 
 \begin{itemize}
-    \item \textbf{LSTM (línea base).} Red recurrente \needcite{Long Short-Term Memory} entrenada por piloto sobre el mismo \textit{feature store}. Capturaba la pendiente media de degradación, pero el estado oculto se saturaba en stints largos y apenas reaccionaba al embedding categórico de compuesto. Se conserva como ruta de respaldo para modelos serializados de versiones anteriores.
+    \item \textbf{LSTM (línea base).} Red recurrente Long Short-Term Memory \cite{hochreiter1997lstm} entrenada por piloto sobre el mismo \textit{feature store}. Capturaba la pendiente media de degradación, pero el estado oculto se saturaba en stints largos y apenas reaccionaba al embedding categórico de compuesto. Se conserva como ruta de respaldo para modelos serializados de versiones anteriores.
 
     \item \textbf{Transformer v1} ($d_\text{model} = 32$, 2 capas, 4 cabezas, ventana de 15 vueltas, una cabeza de salida, $\approx \num{26500}$ parámetros). Prueba de concepto que validó la viabilidad de un encoder de atención sobre el volumen de datos disponible. El modelo aprendía la curva de degradación media pero no distinguía entre pilotos: el embedding categórico no se traducía en pendientes de degradación diferenciadas.
 
@@ -194,7 +194,7 @@ Para cada solicitud de ritmo, el sistema resuelve los parámetros del perfil sig
     \item \textbf{Valores de seguridad}: $\beta_0 = 90~\si{\second}$, $\beta_1 = 0.05~\si{\second/vuelta}$, $\beta_2 = \beta_3 = 0$. Este nivel garantiza que el motor nunca produce errores numéricos por falta de datos.
 \end{enumerate}
 
-\needcite{Esta estructura es análoga a los modelos lineales jerárquicos: el perfil global actúa como prior implícito del comportamiento de un piloto genérico}. El entrenamiento de perfiles requiere un mínimo de 160 vueltas por piloto.
+Esta estructura es análoga a los modelos lineales jerárquicos: el perfil global actúa como prior implícito del comportamiento de un piloto genérico \cite{raudenbush2002hlm}. El entrenamiento de perfiles requiere un mínimo de 160 vueltas por piloto.
 
 El nivel~4 admite, de forma opcional, una sobreescritura del ritmo base con la mediana de las vueltas de carrera del circuito para el compuesto solicitado (ecuación~\ref{eq:envelope_lap}). Cuando está disponible, sustituye al literal $\beta_0 = 90~\si{\second}$ por un valor coherente con la dinámica real del trazado. Este mecanismo se activa únicamente cuando el dataset no contiene muestra suficiente para entrenar perfiles a los niveles 1 a~3; en los circuitos presentes en el conjunto actual no se utiliza, pero queda disponible ante la incorporación futura de trazados nuevos o pilotos con historial corto.
 
@@ -260,7 +260,7 @@ Las $K = 3$ mejores candidatas según el orden analítico se someten a una simul
     \item \textbf{Ruido de tráfico.} A cada vuelta del rollout se le suma un componente gaussiano $\mathcal{N}(\mu_\text{tráfico}, \sigma_\text{tráfico}^2)$ que representa la variabilidad por adelantamientos y defensa.
 \end{enumerate}
 
-El Transformer ejecuta cada rollout en modo autoregresivo: dada la ventana de contexto de 40 vueltas, predice el delta de la siguiente, lo desnormaliza, lo añade al historial y desplaza la ventana. La implementación trata las $N_\text{sim}$ réplicas como un \textit{batch} y comparte el coste de las capas de atención entre todas. \needcite{El error del estimador empírico de media y varianza decae como $1/\sqrt{N_\text{sim}}$}.
+El Transformer ejecuta cada rollout en modo autoregresivo: dada la ventana de contexto de 40 vueltas, predice el delta de la siguiente, lo desnormaliza, lo añade al historial y desplaza la ventana. La implementación trata las $N_\text{sim}$ réplicas como un \textit{batch} y comparte el coste de las capas de atención entre todas. El error del estimador empírico de media y varianza decae como $1/\sqrt{N_\text{sim}}$ \cite{rubinstein2016monte}.
 
 \subsection{Motor 3: Optimizador de cartera estratégica}
 \label{ssec:motor3}
@@ -272,7 +272,7 @@ El Motor 3 produce el orden final entregado al usuario. Sobre cada candidata, ta
     \label{eq:risk_score_cap4}
 \end{equation}
 
-con $\lambda = 0.15$ por defecto. \needcite{La formulación es la adaptación directa del marco de cartera de Markowitz al dominio de la estrategia de carrera}: la varianza se trata como riesgo a controlar, no como ruido residual a ignorar.
+con $\lambda = 0.15$ por defecto. La formulación es la adaptación directa del marco de cartera de Markowitz \cite{markowitz1952portfolio} al dominio de la estrategia de carrera: la varianza se trata como riesgo a controlar, no como ruido residual a ignorar.
 
 Antes de devolver el resultado al usuario, el Motor 3 aplica tres operaciones de presentación:
 

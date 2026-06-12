@@ -16,9 +16,9 @@ Este capítulo presenta la visión arquitectónica de \textit{RaceScope}: qué c
 Los seis bloques que componen el sistema son los siguientes:
 
 \begin{enumerate}
-    \item \textbf{Fuente de datos: \needcite{OpenF1}.} API pública que proporciona tiempos de vuelta, stints y compuestos de neumático, telemetría del vehículo y datos meteorológicos por sesión.
+    \item \textbf{Fuente de datos: \textit{OpenF1} \cite{openf1api}.} API pública que proporciona tiempos de vuelta, stints y compuestos de neumático, telemetría del vehículo y datos meteorológicos por sesión.
 
-    \item \textbf{Ingestión y preprocesamiento.} Un \textit{pipeline} Python descarga los datos sesión a sesión, los valida y los transforma en una \textit{feature store} columnar en formato \needcite{Apache Parquet}.
+    \item \textbf{Ingestión y preprocesamiento.} Un \textit{pipeline} Python descarga los datos sesión a sesión, los valida y los transforma en una \textit{feature store} columnar en formato Apache Parquet \cite{parquet}.
 
     \item \textbf{Perfil paramétrico de piloto.} Modelo de regresión lineal con cuatro coeficientes que captura la degradación de neumáticos por piloto, circuito y compuesto, con jerarquía de \textit{fallback} de cuatro niveles. Alimenta al Motor~1.
 
