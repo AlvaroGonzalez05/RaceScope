@@ -152,12 +152,12 @@
 
 % ── Portada ──────────────────────────────────────────────────────────────────
 \begin{titlepage}
+    \centering
     \begin{figure}
         \centering
-        \includegraphics[width=0.35\linewidth]{logoComillas.png}
+        \includegraphics[width=0.3\linewidth]{logoComillas.png}
     \end{figure}
-    \centering
-    \Large Grado en Business Analytics \\
+    \Large Grado en Análisis de Negocios/Business Analytics \\
     \vspace*{2.25em}
     \centering
     Trabajo Fin de Grado \\
@@ -215,128 +215,308 @@ Autorizada la entrega del proyecto
 \noindent Fdo.: Pablo Martín Muñoz
 
 % ── Resumen ejecutivo (ES) ────────────────────────────────────────────────────
-% \cleardoublepage
-% 
-% \noindent
-% \textbf{\large RACESCOPE: OPTIMIZACIÓN DE LA ESTRATEGIA DE CARRERA EN FÓRMULA 1 MEDIANTE INTELIGENCIA ARTIFICIAL}\\
-% 
-% \noindent
-% \textbf{Autor:} Álvaro González Tabernero\\
-% \textbf{Director:} Pablo Martín Muñoz\\
-% \textbf{Entidad colaboradora:} Universidad Pontificia Comillas, ETS de Ingeniería - ICAI\\
+\cleardoublepage
 
-% \noindent
-% \textbf{RESUMEN DEL PROYECTO}\\
-% % TODO: Escribir resumen (~150 palabras)
-% \todo{Escribir resumen del proyecto en español.}\\
+\noindent
+\textbf{\large RACESCOPE: OPTIMIZACIÓN DE LA ESTRATEGIA DE CARRERA EN FÓRMULA 1 MEDIANTE INTELIGENCIA ARTIFICIAL}\\
 
-% \noindent \textbf{Palabras clave:}\\
-% % TODO: Completar palabras clave
-% inteligencia artificial, Transformers, simulación Monte Carlo, estrategia de carrera,
-% Fórmula 1, predicción de tiempos de vuelta, degradación de neumáticos,
-% aprendizaje profundo, optimización bajo incertidumbre, FastAPI.\\
+\noindent
+\textbf{Autor:} Álvaro González Tabernero\\
+\textbf{Director:} Pablo Martín Muñoz\\
+\textbf{Entidad colaboradora:} Universidad Pontificia Comillas, ICAI\\
 
-% \noindent \textbf{MOTIVACIÓN}\\
-% % TODO: Escribir motivación (~150 palabras)
-% \todo{Escribir motivación.}\\
+\noindent
+\textbf{RESUMEN DEL PROYECTO}\\
+\textit{RaceScope} es un sistema \textit{end-to-end} de exploración de estrategias pre-carrera para Fórmula~1 que combina aprendizaje profundo con simulación Monte Carlo para clasificar planes de paradas en boxes. Dada una temporada, circuito y piloto, el sistema genera un conjunto de estrategias candidatas y las ordena por tiempo total esperado bajo un criterio media-varianza. El motor articula tres componentes: un perfil paramétrico lineal por piloto-circuito-compuesto que resuelve analíticamente la vuelta de pit; un Transformer v3 entrenado por piloto, con cabeza global de respaldo, que predice el ritmo de vuelta de forma no lineal; y un optimizador de cartera que ordena las candidatas. Los datos provienen de la API pública OpenF1, con 2023-2024 como conjunto de entrenamiento y 2025 reservada íntegramente como \textit{held-out}. El sistema se entrega como una API FastAPI y una aplicación web React con vista comparativa entre pilotos.\\
 
-% \noindent \textbf{OBJETIVOS}\\
-% % TODO: Escribir objetivos
-% \todo{Escribir objetivos del proyecto.}\\
+\noindent \textbf{Palabras clave:}\\
+inteligencia artificial, Transformers, simulación Monte Carlo, estrategia de carrera,
+Fórmula 1, predicción de tiempos de vuelta, degradación de neumáticos,
+aprendizaje profundo, optimización bajo incertidumbre, FastAPI.\\
 
-% \noindent \textbf{METODOLOGÍA}\\
-% La metodología se estructura en cuatro fases:
-% \begin{enumerate}
-%     \item Ingestión y preprocesamiento de datos de telemetría F1 desde la API OpenF1.
-%     \item Entrenamiento de modelos Transformer de predicción de tiempos de vuelta
-%           específicos por piloto, con fallback a un modelo global.
-%     \item Diseño e implementación de un motor de estrategia organizado en tres
-%           componentes: resolución analítica de la vuelta óptima, optimizador de
-%           cartera estratégica y refinamiento Monte Carlo del Top-$K$.
-%     \item Desarrollo de una API REST (FastAPI) y una aplicación web (React + Vite)
-%           para la exploración interactiva de estrategias pre-carrera.
-% \end{enumerate}
-% \vspace{1em}
-% % TODO: Insertar figura de metodología
-% % \begin{figure}[H]
-% %     \centering
-% %     \includegraphics[width=0.65\textwidth]{images/metodologia.png}
-% %     \caption{Metodología del sistema RaceScope. Elaboración propia.}
-% %     \label{fig:metodologia_resumen}
-% % \end{figure}
+\noindent \textbf{MOTIVACIÓN}\\
+La elección de la estrategia de paradas en boxes es uno de los problemas de decisión más estudiados de la Fórmula~1 contemporánea. Los equipos profesionales operan simuladores propietarios sobre telemetría privada y modelos de neumático cerrados, inaccesibles fuera del muro de boxes. La literatura académica produce simuladores reproducibles solo recreando el simulador entero. Entre ambos extremos, el aficionado y el analista externo carecen de una herramienta que combine datos públicos, modelado moderno y exploración pre-carrera. \textit{RaceScope} cubre ese hueco: un sistema completamente \textit{open-source}, construido sobre la API pública OpenF1, que ordena las estrategias en segundos sobre una interfaz web. El propósito es doble: ofrecer al aficionado y al analista externo herramientas hasta ahora restringidas a los equipos, y aportar una referencia metodológica reproducible para futuros trabajos sobre estrategia en deportes de motor.\\
 
-% \noindent \textbf{RESULTADOS}\\
-% % TODO: Escribir resultados
-% \todo{Escribir resultados principales.}\\
+\noindent \textbf{OBJETIVOS}\\
+El objetivo general es diseñar, implementar y evaluar un sistema \textit{end-to-end} de exploración de estrategias de paradas en Fórmula~1 que combine aprendizaje profundo y simulación Monte Carlo. Los cinco objetivos específicos son: (1) construir un pipeline de ingesta y preprocesamiento sobre OpenF1; (2) entrenar modelos Transformer de predicción de tiempos de vuelta específicos por piloto, con respaldo global; (3) ajustar un modelo paramétrico de degradación sensible a las condiciones térmicas; (4) integrar ambos modelos en un motor de estrategia que clasifique candidatas bajo un criterio media-varianza; y (5) entregar el sistema en una aplicación web reactiva sobre una API REST.\\
 
-% \noindent \textbf{CONCLUSIONES}\\
-% % TODO: Escribir conclusiones
-% \todo{Escribir conclusiones.}\\
+\noindent \textbf{METODOLOGÍA}\\
+La metodología se estructura en cuatro fases:
+\begin{enumerate}
+    \item Ingestión y preprocesamiento de datos de telemetría F1 desde la API OpenF1.
+    \item Entrenamiento de modelos Transformer de predicción de tiempos de vuelta específicos por piloto, con \textit{fallback} a un modelo global, y ajuste del perfil paramétrico de degradación por piloto-circuito-compuesto.
+    \item Diseño e implementación de un motor de estrategia organizado en tres componentes: resolución analítica de la vuelta óptima (Motor~1), refinamiento Monte Carlo del Top-$K$ mediante \textit{rollout} autoregresivo del Transformer (Motor~2), y optimizador de cartera media-varianza (Motor~3).
+    \item Desarrollo de una API REST (FastAPI) y una aplicación web (React~+~Vite) para la exploración interactiva de estrategias pre-carrera.
+\end{enumerate}
+\vspace{1em}
+
+\begin{figure}[htbp]
+\centering
+\begingroup
+\shorthandoff{<>}
+\resizebox{0.8\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily,
+  src/.style    = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  pipe/.style   = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  model/.style  = {draw, rounded corners=3pt, text width=4.7cm,
+                   minimum height=1.6cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  motor/.style  = {draw, rounded corners=3pt, text width=4.7cm,
+                   minimum height=1.6cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  motor3/.style = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.2cm, align=center, fill=white, font=\small,
+                   line width=0.7pt},
+  clamp/.style  = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt, densely dashed},
+  outbox/.style = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=0.9cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  arr/.style    = {->, >=stealth, line width=0.55pt},
+]
+
+%% Source
+\node[src] (openf1) at (0, 0)
+     {\textbf{Fuente de datos: OpenF1} (API pública)\\[1pt]
+      \footnotesize Tiempos de vuelta · Stints y compuestos · Telemetría · Meteorología};
+
+%% Pipeline
+\node[pipe] (pipe) at (0, -2.0)
+     {\textbf{Ingestión y preprocesamiento}\\[1pt]
+      \footnotesize \textit{Feature store} columnar particionada por temporada y sesión};
+\draw[arr] (openf1.south) -- (pipe.north);
+
+%% Two models in parallel
+\node[model] (prof)  at (-2.9, -4.5)
+     {\textbf{Perfil paramétrico}\\[1pt]
+      \footnotesize Regresión lineal por\\
+      \footnotesize piloto, circuito y compuesto\\
+      \footnotesize \textit{Fallback} de 4 niveles};
+\node[model] (trans) at ( 2.9, -4.5)
+     {\textbf{Transformer v3}\\[1pt]
+      \footnotesize Encoder de atención\\
+      \footnotesize Por piloto + cabeza global\\
+      \footnotesize Contexto de 40 vueltas};
+
+\draw[arr] (pipe.south) -- ++(0,-0.4) -| (prof.north);
+\draw[arr] (pipe.south) -- ++(0,-0.4) -| (trans.north);
+
+%% Motors 1 and 2 in parallel
+\node[motor] (motor1) at (-2.9, -7.4)
+     {\textbf{Motor 1}\\[1pt]
+      \footnotesize Resolución analítica\\
+      \footnotesize \textit{Break-even} cerrado\\
+      \footnotesize Filtro de rentabilidad};
+\node[motor] (motor2) at ( 2.9, -7.365)
+     {\textbf{Motor 2}\\[1pt]
+      \footnotesize Refinamiento Monte Carlo\\
+      \footnotesize \textit{Rollout} autoregresivo\\
+      \footnotesize Top-$K$ candidatas};
+
+\draw[arr] (prof.south)  -- (motor1.north);
+\draw[arr] (trans.south) -- (motor2.north);
+
+%% Motor 3
+\node[motor3] (motor3) at (0, -9.7)
+     {\textbf{Motor 3} · Optimizador de cartera estratégica\\[1pt]
+      \footnotesize Criterio media-varianza · Agrupación por ventanas de \textit{pit}};
+\draw[arr] (motor1.south) -- ++(0,-0.4) -| (motor3.north);
+\draw[arr] (motor2.south) -- ++(0,-0.4) -| (motor3.north);
+
+%% Safety envelope
+\node[clamp] (clamp) at (0, -11.5)
+     {\textbf{Cota de validez física}\\[1pt]
+      \footnotesize Envoltura empírica del circuito
+
+      \footnotesize Acotación del ritmo y del tiempo total};
+\draw[arr] (motor3.south) -- (clamp.north);
+
+%% Output stack
+\node[outbox] (api) at (0, -13.2)
+     {\textbf{API REST (FastAPI)}
+
+     Petición pre-carrera por piloto};
+\node[outbox] (web) at (0, -14.7)
+     {\textbf{Aplicación web (React + Vite)}
+
+      Carrusel de estrategias y curvas de ritmo};
+
+\draw[arr] (clamp.south) -- (api.north);
+\draw[arr] (api.south)   -- (web.north);
+
+\end{tikzpicture}%
+}
+\endgroup
+\caption{Arquitectura de \textit{RaceScope}: flujo de datos desde OpenF1 hasta la API y la aplicación web. Elaboración propia.}
+\label{fig:metodologia_resumen}
+\end{figure}
+
+\noindent \textbf{RESULTADOS}\\
+La evaluación sobre la temporada 2025 mantenida íntegramente como \textit{held-out} reporta un MAPE entre el 15{,}5\,\% y el 16{,}9\,\% sobre los cuatro pilotos evaluados (Verstappen, Norris, Piastri, Leclerc), con un sesgo positivo sistemático entre +636\,s y +692\,s en el tiempo total de carrera, atribuible al margen frente a \textit{safety car} aplicado por el motor. La simulación del campeonato Verstappen-Norris a partir de los tiempos esperados predichos arroja una concordancia carrera a carrera del 50\,\% y declara a Verstappen vencedor del campeonato hipotético por 70 puntos, frente al empate 11-11 del campeonato real.\\
+
+\noindent \textbf{CONCLUSIONES}\\
+El sistema cumple su objetivo general: ordena las estrategias pre-carrera en segundos sobre una interfaz reactiva, con una calibración del orden del 16\,\% en el peor caso y un sesgo sistemático identificado y caracterizado. Las dos limitaciones estructurales del prototipo son la deriva temporal entre las temporadas de entrenamiento (2023-2024) y el conjunto evaluado (2025), y la ausencia de información de carrera en tiempo real, que en la realidad gobierna parte de las decisiones del muro de boxes. Las pestañas Live y Rewatch del cliente quedan reservadas para futuras iteraciones del prototipo.\\
 
 % ── Resumen ejecutivo (EN) ────────────────────────────────────────────────────
-% \cleardoublepage
-% 
-% \noindent
-% \textbf{\large RACESCOPE: REAL-TIME RACE STRATEGY OPTIMISATION IN MOTORSPORT USING ARTIFICIAL INTELLIGENCE}\\
-% 
-% \noindent
-% \textbf{Author:} Álvaro González Tabernero\\
-% \textbf{Supervisor:} Pablo Martín Muñoz\\
-% \textbf{Collaborating Institution:} Universidad Pontificia Comillas, ETS de Ingeniería - ICAI\\
+\cleardoublepage
 
-% \noindent
-% \textbf{PROJECT ABSTRACT}\\
-% % TODO: Escribir abstract en inglés
-% \todo{Write project abstract in English.}\\
+\noindent
+\textbf{\large RACESCOPE: PRE-RACE STRATEGY OPTIMISATION IN FORMULA 1 USING ARTIFICIAL INTELLIGENCE}\\
 
-% \noindent \textbf{Keywords:}\\
-% artificial intelligence, Transformers, Monte Carlo simulation, race strategy,
-% Formula 1, lap time prediction, tyre degradation, deep learning,
-% optimisation under uncertainty, FastAPI.\\
+\noindent
+\textbf{Author:} Álvaro González Tabernero\\
+\textbf{Supervisor:} Pablo Martín Muñoz\\
+\textbf{Collaborating Institution:} Universidad Pontificia Comillas, ICAI\\
 
-% \noindent \textbf{MOTIVATION}\\
-% % TODO
-% \todo{Write motivation in English.}\\
+\noindent
+\textbf{PROJECT ABSTRACT}\\
+\textit{RaceScope} is an end-to-end pre-race strategy exploration system for Formula~1 that combines deep learning with Monte Carlo simulation to rank pit-stop plans. Given a season, circuit and driver, the system generates a set of candidate strategies and ranks them by expected total race time under a mean-variance criterion. The engine articulates three components: a linear parametric profile per driver-circuit-compound that solves the pit lap analytically; a per-driver Transformer~v3 with a global fallback head that predicts lap pace non-linearly; and a portfolio optimiser that orders the candidates. Data is sourced from the public OpenF1 API, with seasons 2023-2024 used for training and 2025 held out entirely. The system is delivered as a FastAPI service and a React web application with a comparative driver view.\\
 
-% \noindent \textbf{OBJECTIVES}\\
-% % TODO
-% \todo{Write objectives in English.}\\
+\noindent \textbf{Keywords:}\\
+artificial intelligence, Transformers, Monte Carlo simulation, race strategy,
+Formula 1, lap time prediction, tyre degradation, deep learning,
+optimisation under uncertainty, FastAPI.\\
 
-% \noindent \textbf{METHODOLOGY}\\
-% The methodology is structured into four phases:
-% \begin{enumerate}
-%     \item Ingestion and preprocessing of F1 telemetry data from the OpenF1 API.
-%     \item Training of per-driver Transformer models for lap time prediction, with
-%           fallback to a global model.
-%     \item Design and implementation of a strategy engine organised in three
-%           components: analytical resolution of the optimal pit lap, strategic
-%           portfolio optimiser and Monte Carlo refinement of the top-$K$ candidates.
-%     \item Development of a REST API (FastAPI) and a web application (React + Vite)
-%           for interactive pre-race strategy exploration.
-% \end{enumerate}
-% % TODO: Insertar figura de metodología (inglés)
-% % \begin{figure}[H]
-% %     \centering
-% %     \includegraphics[width=0.65\textwidth]{images/metodologia.png}
-% %     \caption{RaceScope system methodology. Own elaboration.}
-% %     \label{fig:metodologia_resumen_en}
-% % \end{figure}
+\noindent \textbf{MOTIVATION}\\
+The choice of pit-stop strategy is one of the most studied decision problems in contemporary Formula~1. Professional teams operate proprietary simulators on private telemetry and closed tyre models, inaccessible outside the pit wall. The academic literature produces simulators that are reproducible only by recreating the simulator itself. Between both extremes, the fan and the external analyst lack a tool that combines public data, modern modelling and pre-race exploration. \textit{RaceScope} covers that gap: a fully open-source system, built on the public OpenF1 API, that ranks strategies in seconds on a web interface. The purpose is twofold: to offer fans and external analysts tools previously restricted to teams, and to contribute a reproducible methodological reference for future work on race strategy in motorsport.\\
 
-% \noindent \textbf{RESULTS}\\
-% % TODO
-% \todo{Write results in English.}\\
+\noindent \textbf{OBJECTIVES}\\
+The general objective is to design, implement and evaluate an end-to-end system for the exploration of pit-stop strategies in Formula~1 that combines deep learning and Monte Carlo simulation. The five specific objectives are: (1) building an ingestion and preprocessing pipeline on top of OpenF1; (2) training per-driver Transformer models for lap time prediction with a global fallback; (3) fitting a parametric tyre-degradation model sensitive to thermal conditions; (4) integrating both models into a strategy engine that ranks candidates under a mean-variance criterion; and (5) delivering the system as a reactive web application on top of a REST API.\\
 
-% \noindent \textbf{CONCLUSIONS}\\
-% % TODO
-% \todo{Write conclusions in English.}\\
+\noindent \textbf{METHODOLOGY}\\
+The methodology is structured into four phases:
+\begin{enumerate}
+    \item Ingestion and preprocessing of F1 telemetry data from the OpenF1 API.
+    \item Training of per-driver Transformer models for lap time prediction with a fallback to a global model, and fitting of the parametric degradation profile per driver-circuit-compound.
+    \item Design and implementation of a strategy engine organised in three components: analytical resolution of the optimal pit lap (Motor~1), Monte Carlo refinement of the Top-$K$ via autoregressive Transformer \textit{rollout} (Motor~2), and a mean-variance portfolio optimiser (Motor~3).
+    \item Development of a REST API (FastAPI) and a web application (React~+~Vite) for interactive pre-race strategy exploration.
+\end{enumerate}
+\vspace{1em}
+
+\begin{figure}[htbp]
+\centering
+\begingroup
+\shorthandoff{<>}
+\resizebox{0.8\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\sffamily,
+  src/.style    = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  pipe/.style   = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  model/.style  = {draw, rounded corners=3pt, text width=4.7cm,
+                   minimum height=1.6cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  motor/.style  = {draw, rounded corners=3pt, text width=4.7cm,
+                   minimum height=1.6cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  motor3/.style = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.2cm, align=center, fill=white, font=\small,
+                   line width=0.7pt},
+  clamp/.style  = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=1.0cm, align=center, fill=white, font=\small,
+                   line width=0.5pt, densely dashed},
+  outbox/.style = {draw, rounded corners=3pt, text width=10cm,
+                   minimum height=0.9cm, align=center, fill=white, font=\small,
+                   line width=0.5pt},
+  arr/.style    = {->, >=stealth, line width=0.55pt},
+]
+
+%% Source
+\node[src] (openf1) at (0, 0)
+     {\textbf{Data source: OpenF1} (public API)\\[1pt]
+      \footnotesize Lap times · Stints and compounds · Telemetry · Weather};
+
+%% Pipeline
+\node[pipe] (pipe) at (0, -2.0)
+     {\textbf{Ingestion and preprocessing}\\[1pt]
+      \footnotesize Partitioned columnar \textit{feature store} by season and session};
+\draw[arr] (openf1.south) -- (pipe.north);
+
+%% Two models in parallel
+\node[model] (prof)  at (-2.9, -4.5)
+     {\textbf{Parametric profile}\\[1pt]
+      \footnotesize Linear regression per\\
+      \footnotesize driver, circuit and compound\\
+      \footnotesize 4-level \textit{fallback}};
+\node[model] (trans) at ( 2.9, -4.5)
+     {\textbf{Transformer v3}\\[1pt]
+      \footnotesize Encoder de atención\\
+      \footnotesize Por piloto + cabeza global\\
+      \footnotesize Contexto de 40 vueltas};
+
+\draw[arr] (pipe.south) -- ++(0,-0.4) -| (prof.north);
+\draw[arr] (pipe.south) -- ++(0,-0.4) -| (trans.north);
+
+%% Motors 1 and 2 in parallel
+\node[motor] (motor1) at (-2.9, -7.4)
+     {\textbf{Motor 1}\\[1pt]
+      \footnotesize Analytical solution\\
+      \footnotesize Closed-form \textit{break-even}\\
+      \footnotesize Profitability filter};
+\node[motor] (motor2) at ( 2.9, -7.4)
+     {\textbf{Motor 2}\\[1pt]
+      \footnotesize Monte Carlo refinement\\
+      \footnotesize Autoregressive \textit{rollout}\\
+      \footnotesize Top-$K$ candidates};
+
+\draw[arr] (prof.south)  -- (motor1.north);
+\draw[arr] (trans.south) -- (motor2.north);
+
+%% Motor 3
+\node[motor3] (motor3) at (0, -9.7)
+     {\textbf{Motor 3} · Strategic portfolio optimiser\\[1pt]
+      \footnotesize Mean-variance criterion · Grouping by \textit{pit} windows};
+\draw[arr] (motor1.south) -- ++(0,-0.4) -| (motor3.north);
+\draw[arr] (motor2.south) -- ++(0,-0.4) -| (motor3.north);
+
+%% Safety envelope
+\node[clamp] (clamp) at (0, -11.5)
+     {\textbf{Physical validity envelope}\\[1pt]
+      \footnotesize Empirical circuit envelope
+
+      \footnotesize Bounding of pace and total time};
+\draw[arr] (motor3.south) -- (clamp.north);
+
+%% Output stack
+\node[outbox] (api) at (0, -13.2)
+     {\textbf{API REST (FastAPI)}
+
+     Petición pre-carrera por piloto};
+\node[outbox] (web) at (0, -14.7)
+     {\textbf{Aplicación web (React + Vite)}
+
+      Carrusel de estrategias y curvas de ritmo};
+
+\draw[arr] (clamp.south) -- (api.north);
+\draw[arr] (api.south)   -- (web.north);
+
+\end{tikzpicture}%
+}
+\endgroup
+\caption{\textit{RaceScope} system architecture: data flow from OpenF1 to the API and web application. Own elaboration.}
+\label{fig:metodologia_resumen_en}
+\end{figure}
+
+\noindent \textbf{RESULTS}\\
+The evaluation on the 2025 season, held out entirely from training, reports a MAPE between 15{.}5\,\% and 16{.}9\,\% across the four evaluated drivers (Verstappen, Norris, Piastri, Leclerc), with a systematic positive bias between +636\,s and +692\,s in total race time, attributable to the \textit{safety-car} margin applied by the engine. The Verstappen-Norris championship simulation built from the predicted expected times yields a race-by-race head-to-head agreement of 50\,\% and declares Verstappen as the hypothetical champion by 70 points, against the real 11-11 tie.\\
+
+\noindent \textbf{CONCLUSIONS}\\
+The system meets its general objective: it ranks pre-race strategies in seconds on a reactive interface, with a worst-case calibration of about 16\,\% and a systematic bias that is identified and characterised. The two structural limitations of the prototype are the temporal drift between the training seasons (2023-2024) and the evaluated set (2025), and the absence of real-time race information, which in reality governs part of the pit-wall decisions. The Live and Rewatch tabs of the client are reserved for future iterations of the prototype.\\
 
 % ── Agradecimientos ───────────────────────────────────────────────────────────
 % \cleardoublepage
 
 % {\centering \textbf{Agradecimientos}\\}
 % \noindent
-% % TODO: Escribir agradecimientos personalizados para este TFG
-% \todo{Escribir agradecimientos.}
 
 % ── Índices ───────────────────────────────────────────────────────────────────
 \cleardoublepage
