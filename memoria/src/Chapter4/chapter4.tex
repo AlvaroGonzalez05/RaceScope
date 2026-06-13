@@ -20,7 +20,7 @@ La ingestión descarga, para cada año solicitado, los datos de las sesiones de 
 
 El cliente HTTP implementa dos mecanismos de control de flujo para operar con la API de OpenF1 dentro de sus límites de tasa. El primero es un \textbf{token bucket} que regula el ritmo sostenido a 60 peticiones por minuto con un intervalo mínimo entre peticiones de 0.167~s. El segundo es un \textbf{reintento con \textit{backoff} exponencial}: ante errores transitorios (429 o 5xx), el cliente espera $2^n$ segundos antes de reintentar, con un máximo de 5 intentos. La ingestión de sesiones ya descargadas se omite en ejecuciones posteriores, lo que permite reanudar ingestiones interrumpidas sin duplicar datos.
 
-Los datos se persisten en disco en una jerarquía particionada por temporada y sesión. El uso del formato \needcite{Apache Parquet}, un formato columnar optimizado para consultas analíticas con compresión integrada, permite cargar únicamente las columnas necesarias en cada fase del pipeline, reduciendo el uso de memoria en el preprocesamiento.
+Los datos se persisten en disco en una jerarquía particionada por temporada y sesión. El uso del formato Apache Parquet \cite{parquet}, un formato columnar optimizado para consultas analíticas con compresión integrada, permite cargar únicamente las columnas necesarias en cada fase del pipeline, reduciendo el uso de memoria en el preprocesamiento.
 
 \subsection{Preprocesamiento e ingeniería de características}
 \label{ssec:preprocessing}
@@ -82,7 +82,7 @@ El modelo de predicción de tiempos de vuelta resuelve un problema de \textbf{re
 \subsection{Arquitectura Transformer}
 \label{ssec:arquitectura_transformer}
 
-El modelo es un encoder Transformer Pre-LN \cite{vaswani2017attention} entrenado de forma específica por piloto. Su arquitectura se organiza en cinco bloques:
+El modelo es un encoder Transformer Pre-LN \cite{vaswani2017attention,xiong2020layernorm} entrenado de forma específica por piloto. Su arquitectura se organiza en cinco bloques:
 
 \begin{enumerate}
     \item \textbf{Embeddings categóricos por paso temporal.} Los tres identificadores discretos del paso temporal (compuesto, tipo de vuelta y tipo de sesión) se proyectan a embeddings de 24, 8 y 8 dimensiones, respectivamente. El identificador de circuito, estático por secuencia, aporta un embedding adicional de 48 dimensiones replicado a lo largo de la ventana.
@@ -109,9 +109,9 @@ La función de pérdida combina la cabeza principal con las tres auxiliares:
     \label{eq:transformer_loss}
 \end{equation}
 
-La cabeza principal se entrena con \needcite{la pérdida de Huber}, que combina el comportamiento cuadrático cerca del óptimo con el lineal en la cola para reducir la sensibilidad a outliers. El optimizador es \needcite{AdamW} con tasa de aprendizaje base $\eta = 2 \cdot 10^{-4}$, sin \textit{weight decay}. 
+La cabeza principal se entrena con la pérdida de Huber \cite{wikipediahuberloss}, que combina el comportamiento cuadrático cerca del óptimo con el lineal en la cola para reducir la sensibilidad a outliers. El optimizador es AdamW \cite{cornelladamw} con tasa de aprendizaje base $\eta = 2 \cdot 10^{-4}$, sin \textit{weight decay}. 
 
-Se aplica un planificador \needcite{OneCycleLR} sobre 30 épocas, con \textit{early stopping} de paciencia 5 monitorizando el MAE de validación, lotes de 64 secuencias y recorte de gradiente a norma máxima 1.0. El dropout se mantiene en cero de forma deliberada: el objetivo del entrenamiento es que el modelo memorice con precisión el comportamiento de un único piloto sobre el conjunto de combinaciones (circuito, compuesto) que ha visto, no generalizar fuera de dominio.
+Se aplica un planificador OneCycleLR \cite{pytorchonecyclelr} sobre 30 épocas, con \textit{early stopping} de paciencia 5 monitorizando el MAE de validación, lotes de 64 secuencias y recorte de gradiente a norma máxima 1.0. El dropout se mantiene en cero de forma deliberada: el objetivo del entrenamiento es que el modelo memorice con precisión el comportamiento de un único piloto sobre el conjunto de combinaciones (circuito, compuesto) que ha visto, no generalizar fuera de dominio.
 
 La estrategia sigue una política de \textbf{entrenamiento por piloto con fallback global}:
 
@@ -296,7 +296,7 @@ Para cuantificar el efecto sobre el sistema en producción se construyó una rut
 
 \begin{itemize}
     \item Rango de duraciones totales entre pilotos: $[57\text{:}42, 3\text{:}16\text{:}45]$, equivalente a una dispersión de \SI{139}{\minute} (\SI{8343}{\second}) en una carrera donde el intervalo de tiempos físicamente esperable, en presencia de pilotos doblados, no supera las decenas de segundos.
-    \item Coeficientes térmicos por OLS con magnitudes incompatibles con la sensibilidad reportada para neumáticos de F1 (rango característico $0.05$ a $0.15~\si{\second\per\celsius}$, \needcite{Pirelli technical reports}). En 53 de 60 combinaciones piloto-compuesto la corrección térmica efectiva $\beta_2 \cdot \Delta T_{\text{pista}} + \beta_3 \cdot \Delta T_{\text{aire}}$ excedía los $\pm 3~\si{\second}$.
+    \item Coeficientes térmicos por OLS con magnitudes incompatibles con la sensibilidad reportada para neumáticos de F1: el pico de agarre se sitúa en torno a $105~\si{\celsius}$ y la pérdida es de aproximadamente un $1\%$ por cada $5$ a $10~\si{\celsius}$ fuera de esa ventana, equivalente a $0.03$-$0.06~\si{\second\per\celsius}$ por vuelta \cite{symonds2024tyretemp}. En 53 de 60 combinaciones piloto-compuesto la corrección térmica efectiva $\beta_2 \cdot \Delta T_{\text{pista}} + \beta_3 \cdot \Delta T_{\text{aire}}$ excedía los $\pm 3~\si{\second}$.
     \item Intercepts $\beta_0$ distribuidos en el intervalo $[84, 188]~\si{\second}$ para los compuestos SOFT y MEDIUM, frente a un valor de referencia próximo a $90~\si{\second}$.
 \end{itemize}
 
@@ -367,7 +367,7 @@ Línea base (sin acotaciones) & 8\,343 & ref. \\
 \end{tabular}
 \end{table}
 
-La configuración final sitúa el rango de duraciones de carrera en $[1\text{:}32\text{:}18, 1\text{:}38\text{:}33]$, con mediana $1\text{:}35\text{:}28$ y ritmo medio $100.5~\si{\second\per vuelta}$, valores coherentes con la duración real del Gran Premio de Baréin de 2023 ($1\text{:}33\text{:}56$ para el ganador, \needcite{datos oficiales FIA 2023}).
+La configuración final sitúa el rango de duraciones de carrera en $[1\text{:}32\text{:}18, 1\text{:}38\text{:}33]$, con mediana $1\text{:}35\text{:}28$ y ritmo medio $100.5~\si{\second\per vuelta}$, valores coherentes con la duración real del Gran Premio de Baréin de 2023 ($1\text{:}33\text{:}56$ para el ganador, datos oficiales FIA 2023).
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section{Métricas de evaluación}

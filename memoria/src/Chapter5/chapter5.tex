@@ -11,7 +11,7 @@ Este capítulo responde dos preguntas sobre \textit{RaceScope} en la temporada 2
 \section{Configuración experimental}
 \label{sec:config_experimental}
 
-La herramienta de computación es un portátil MacBook Pro con chip Apple M4 Pro (arquitectura arm64, 12 núcleos de CPU), \SI{24}{\giga\byte} de memoria unificada y macOS 26.5. La integración \needcite{Metal Performance Shaders (Apple Developer Documentation)} del chip está disponible pero el código no la activa: tanto el entrenamiento como la inferencia del Transformer se ejecutan en CPU, para mantener la trazabilidad numérica del experimento y la portabilidad del entorno entre máquinas sin GPU dedicada. 
+La herramienta de computación es un portátil MacBook Pro con chip Apple M4 Pro (arquitectura arm64, 12 núcleos de CPU), \SI{24}{\giga\byte} de memoria unificada y macOS 26.5. La integración Metal Performance Shaders \cite{applemps} del chip está disponible pero el código no la activa: tanto el entrenamiento como la inferencia del Transformer se ejecutan en CPU, para mantener la trazabilidad numérica del experimento y la portabilidad del entorno entre máquinas sin GPU dedicada. 
 
 El entorno de software fija Python 3.11.11, PyTorch 2.4 para el modelo de ritmo, FastAPI 0.115 para el servicio HTTP, React 18 y Vite 5 (sobre Node.js 24) para el cliente, y pandas 2.2 con numpy 1.26 para el procesamiento de datos tabulares. Todos los procesos aleatorios del sistema (\textit{rollout} Monte Carlo, muestreos de la distribución de práctica) se inicializan con una misma semilla fija para garantizar la reproducibilidad.
 
@@ -29,7 +29,7 @@ La evaluación empieza por la pregunta de magnitud: ¿cuánto se acerca el tiemp
 Para cada par (piloto, carrera) se compara el tiempo total de la estrategia mejor clasificada por el motor con el tiempo real agregado a partir de las vueltas de carrera limpias del registro almacenado. El filtro de vueltas excluye las entradas y salidas de \textit{pit} y las vueltas tras un evento de \textit{safety car}, que distorsionarían la comparación. De esta pareja de tiempos se derivan dos métricas estándar de evaluación:
 
 \begin{itemize}
-    \item \textbf{MAPE} (\textit{Mean Absolute Percentage Error}): media del error absoluto relativo al tiempo real, expresada en porcentaje. \needcite{MAPE como métrica estándar de evaluación de pronósticos (Armstrong, Hyndman \& Koehler)}. Cuantifica la precisión sin sesgo de signo.
+    \item \textbf{MAPE} (\textit{Mean Absolute Percentage Error}): media del error absoluto relativo al tiempo real, expresada en porcentaje. MAPE es una métrica estándar de evaluación de pronósticos \cite{hyndman2006accuracy}. Cuantifica la precisión sin sesgo de signo.
     \item \textbf{Sesgo medio}: media del error firmado predicho\,$-$\,real en segundos. Su signo indica si el motor sobreestima (positivo) o subestima (negativo) el tiempo de carrera.
 \end{itemize}
 
@@ -49,7 +49,7 @@ La figura~\ref{fig:eval_mape_bias} resume las dos métricas por piloto. El MAPE 
 
 La figura~\ref{fig:eval_error_grid} desglosa el error firmado carrera a carrera, con un panel por piloto y los Grandes Premios ordenados según el calendario. La franja gris marca el margen $\pm$\SI{60}{\second} con el que el motor protege sus predicciones frente a un evento de \textit{safety car}; un error por encima de la banda indica que el sobrecoste predicho excede el margen previsto. 
 
-La forma de las cuatro series es casi idéntica entre pilotos: el sesgo positivo se mantiene a lo largo del calendario y los picos coinciden con los mismos circuitos. Melbourne y Spa concentran los errores más grandes, con valores que superan los \SI{1500}{\second}; son carreras con incidencias mayores en pista (bandera roja en Australia, lluvia intermitente en Spa) que reducen el tiempo real muy por debajo de la duración nominal y que el motor, diseñado bajo la hipótesis de carrera completa, no puede anticipar \needcite{clasificaciones oficiales FIA, temporada 2025}. Fuera de esos casos extremos, el error firmado se estabiliza por encima del cero pero debajo del techo del margen SC en la mayoría de las carreras.
+La forma de las cuatro series es casi idéntica entre pilotos: el sesgo positivo se mantiene a lo largo del calendario y los picos coinciden con los mismos circuitos. Melbourne y Spa concentran los errores más grandes, con valores que superan los \SI{1500}{\second}; son carreras con incidencias mayores en pista (bandera roja en Australia, lluvia intermitente en Spa) que reducen el tiempo real muy por debajo de la duración nominal y que el motor, diseñado bajo la hipótesis de carrera completa, no puede anticipar clasificaciones oficiales FIA, temporada 2025. Fuera de esos casos extremos, el error firmado se estabiliza por encima del cero pero debajo del techo del margen SC en la mayoría de las carreras.
 \begin{figure}[htbp]
 \centering
 \IfFileExists{Chapter5/images/error_signed_grid.pdf}{%
@@ -75,7 +75,7 @@ Tras la lectura de magnitud del apartado anterior, esta sección reduce el alcan
 Para cada Gran Premio de 2025 con datos disponibles se invoca el generador de estrategias sobre dos pilotos, Max Verstappen (VER) y Lando Norris (NOR), y se registra el tiempo esperado de la mejor estrategia para cada uno. Sobre estos tiempos se aplica la siguiente regla:
 
 \begin{itemize}
-    \item En cada carrera, el piloto con menor tiempo total recibe \textbf{25 puntos} (la asignación de F1 al ganador) y el otro recibe \textbf{18 puntos} (la asignación a la segunda posición), siguiendo el \needcite{reglamento deportivo FIA, sistema de puntos por Gran Premio}.
+    \item En cada carrera, el piloto con menor tiempo total recibe \textbf{25 puntos} (la asignación de F1 al ganador) y el otro recibe \textbf{18 puntos} (la asignación a la segunda posición), siguiendo el reglamento deportivo FIA, sistema de puntos por Gran Premio \cite[Art.~A2.2.1]{fia2026general}.
     \item Se construyen dos tablas paralelas: la simulada, donde el tiempo es el predicho por \textit{RaceScope}; y la real, donde el tiempo es el agregado de las vueltas de carrera observadas en la sesión oficial.
     \item Los puntos se acumulan a lo largo del calendario y la diferencia final declara al campeón en cada uno de los dos universos.
 \end{itemize}
@@ -168,7 +168,7 @@ Rewatch   & Pendiente    & Reproducción analítica post-carrera. \\
 \subsection{Diseño visual}
 \label{ssec:web_ui}
 
-La interfaz adopta el modo oscuro por defecto. Es la convención dominante en herramientas de análisis y de monitorización deportiva: reduce la fatiga ocular en sesiones largas de mirada fija, deja respirar a los datos saturados de color (compuestos rojos, amarillos, grises claros) y evoca el muro de boxes real, donde los paneles se mantienen en baja luminancia para no interferir con la visión durante carreras nocturnas o crepusculares. Un único color de acento, un naranja saturado tomado de la identidad de \textit{RaceScope}, aparece reservado para la acción primaria (el botón \textbf{Calcular}) y los marcadores que el usuario debe encontrar de un vistazo. El principio operante es escasez: \needcite{el color de acento sólo conserva su capacidad de atraer la mirada si se administra como recurso limitado}.
+La interfaz adopta el modo oscuro por defecto. Es la convención dominante en herramientas de análisis y de monitorización deportiva: reduce la fatiga ocular en sesiones largas de mirada fija, deja respirar a los datos saturados de color (compuestos rojos, amarillos, grises claros) y evoca el muro de boxes real, donde los paneles se mantienen en baja luminancia para no interferir con la visión durante carreras nocturnas o crepusculares. Un único color de acento, un naranja saturado tomado de la identidad de \textit{RaceScope}, aparece reservado para la acción primaria (el botón \textbf{Calcular}) y los marcadores que el usuario debe encontrar de un vistazo.
 
 Los compuestos de neumático adoptan los colores que el aficionado a la Fórmula~1 ya reconoce: rojo para el blando, amarillo para el medio y gris claro para el duro. Esta convención compartida con la propia FIA reduce a cero la carga cognitiva del aprendizaje de la leyenda. La misma paleta se replica entre la tira de estrategias y el gráfico de curvas de ritmo, de modo que el lazo visual entre la estrategia y su curva es inmediato. El principio que opera aquí es el de coherencia: un mismo concepto debe presentarse con el mismo signo visual en cualquier lugar de la interfaz, para que el ojo no tenga que traducir.
 
@@ -176,8 +176,9 @@ El usuario puede conmutar al tema claro con un control en la cabecera, y la apli
 
 \begin{figure}[htbp]
 \centering
-\rule{0pt}{4cm}
-\caption{Sección héroe del \textit{landing} de \textit{RaceScope}, con titular, llamada a la acción y vista previa animada de curvas de ritmo.}
+\includegraphics[width=0.95\textwidth]{Chapter5/images/landing1.png}
+\includegraphics[width=0.95\textwidth]{Chapter5/images/landing2.png}
+\caption{\textit{Landing page} de \textit{RaceScope}, con titular, llamada a la acción y vista previa animada de curvas de ritmo.}
 \label{fig:cap5_landing_hero}
 \end{figure}
 
@@ -186,27 +187,34 @@ El usuario puede conmutar al tema claro con un control en la cabecera, y la apli
 
 La pestaña Pre-race concentra el caso de uso principal y se estructura como una secuencia lineal de cuatro momentos.
 
-\textbf{Primero, el contexto.} Año, circuito y selección de pilotos se sitúan en una zona aireada en la parte superior, donde la mirada cae de forma natural siguiendo el patrón F de lectura occidental \needcite{F-pattern de Nielsen}. Un único botón, \textbf{Calcular}, actúa como disparador. Su posición y tamaño se han elegido para minimizar el coste de acceso, una lectura local del principio de \needcite{Fitts}: es el único control destacado de la pantalla en estado inicial, evitando la ambigüedad de un panel con varios botones de aspecto comparable.
+\textbf{Primero, el contexto.} Año, circuito y selección de pilotos se sitúan en una zona aireada en la parte superior, donde la mirada cae de forma natural siguiendo el patrón F de lectura occidental \cite{pernice2017fpattern}. Un único botón, \textbf{Calcular}, actúa como disparador. Siendo éste el único control destacado de la pantalla en estado inicial, evitando la ambigüedad de un panel con varios botones de aspecto comparable.
 
 \textbf{Segundo, la espera.} Mientras el motor procesa la petición, las filas de piloto adoptan una micro-animación de carga sin reorganizar la estructura final. El usuario sabe a dónde llegará el resultado antes de que llegue. Esta continuidad espacial es lo que distingue una espera tolerable de una espera ansiosa: la incertidumbre se reduce a la dimensión del tiempo, no a la del lugar.
 
-\textbf{Tercero, el resultado primario.} Cada piloto presenta sus cinco estrategias como un carrusel horizontal de píldoras ordenadas por tiempo esperado. La limitación a cinco no es estética. La ley de Hick \needcite{Hick-Hyman} relaciona el tiempo de decisión con el logaritmo del número de opciones; rebasar ese umbral en una pantalla saturada deteriora la capacidad del usuario para elegir. Cada píldora se condensa a tres unidades visuales: el tipo de plan, los compuestos como puntos de color en orden cronológico y el delta de tiempo respecto a la mejor opción. Tres datos suficientes para una decisión informada sin obligar al usuario a leer texto.
+\textbf{Tercero, el resultado primario.} Cada piloto presenta, como máximo, sus cinco estrategias como un carrusel horizontal de píldoras ordenadas por tiempo esperado. Cada píldora se condensa a tres unidades visuales: el tipo de plan, los compuestos como puntos de color en orden cronológico y el delta de tiempo respecto a la mejor opción. Tres datos suficientes para una decisión informada sin obligar al usuario a leer texto.
 
-\textbf{Cuarto, el detalle profundo.} Al pulsar una píldora, un gráfico de curva de ritmo despliega vuelta a vuelta lo que la estrategia significa en pista. Los \textit{stints} aparecen como polilíneas continuas coloreadas por compuesto, y las ventanas de \textit{pit} se proyectan como bandas verticales semitransparentes. Un indicador dinámico aparece bajo el cursor con la lectura precisa de la vuelta enfocada. Esta separación entre vista resumen y vista detalle es el patrón habitual de \textit{progressive disclosure} \needcite{Nielsen, progressive disclosure}: la información se muestra cuando el usuario indica explícitamente que la quiere, no antes.
+\textbf{Cuarto, el detalle profundo.} Al pulsar una píldora, un gráfico de curva de ritmo despliega vuelta a vuelta lo que la estrategia significa en pista. Los \textit{stints} aparecen como líneas continuas coloreadas por compuesto, y las ventanas de \textit{pit} se proyectan como bandas verticales semitransparentes. Un indicador dinámico aparece bajo el cursor con la lectura precisa de la vuelta enfocada.
 
 La doble fila de filas de piloto, dispuesta lado a lado, materializa el caso de uso \textit{head-to-head}: dos pilotos en idéntico contexto, ocupando porciones simétricas del \textit{viewport}, con cada análisis sirviendo de referencia visual para el otro. El paralelismo espacial refuerza el paralelismo conceptual y permite la comparación directa sin que la mirada tenga que recordar lo que vio un segundo antes.
 
 \begin{figure}[htbp]
 \centering
-\rule{0pt}{4cm}
-\caption{Vista comparativa Pre-race con las dos filas de piloto lado a lado tras pulsar Calcular (caso VER vs NOR).}
+\includegraphics[width=0.95\textwidth]{Chapter5/images/ver_nor_spa_cursor.png}
+\caption{Vista comparativa Pre-race con las dos filas de piloto lado a lado tras pulsar Calcular (caso Verstappen vs Norris).}
 \label{fig:cap5_prerace_dual}
 \end{figure}
 
 \begin{figure}[htbp]
 \centering
-\rule{0pt}{4cm}
-\caption{Gráfico de curva de ritmo: polilíneas por \textit{stint} coloreadas por compuesto, bandas de ventana de \textit{pit} y lectura dinámica por vuelta bajo el cursor.}
+\includegraphics[width=0.95\textwidth]{Chapter5/images/ant_lec_melbourne.png}
+\caption{Vista comparativa Pre-race con las dos filas de piloto lado a lado tras pulsar Calcular (caso Antonelli vs Leclerc).}
+\label{fig:cap5_prerace_dual2}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.95\textwidth]{Chapter5/images/ver_nor_spa_cursor.png}
+\caption{Gráfico de curva de ritmo: líneas por \textit{stint} coloreadas por compuesto, bandas de ventana de \textit{pit} y lectura dinámica por vuelta bajo el cursor.}
 \label{fig:cap5_curve_chart}
 \end{figure}
 

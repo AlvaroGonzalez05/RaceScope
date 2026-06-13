@@ -4,7 +4,7 @@
 % Autor: Álvaro González Tabernero
 % ============================================================
 % Bibliografía podada al subconjunto efectivamente citado en los capítulos.
-% 20 entradas, todas verificadas dos veces contra fuente primaria
+% Entradas verificadas dos veces contra fuente primaria
 % (arXiv, DOI editorial, Crossref, GitHub, OpenReview).
 % ============================================================
 
@@ -32,6 +32,16 @@
   pages     = {5998--6008},
   year      = {2017},
   url       = {https://arxiv.org/abs/1706.03762}
+}
+
+@inproceedings{xiong2020layernorm,
+  author    = {Xiong, Ruibin and Yang, Yunchang and He, Di and Zheng, Kai and Zheng, Shuxin and Xing, Chen and Zhang, Huishuai and Lan, Yanyan and Wang, Liwei and Liu, Tie-Yan},
+  title     = {On Layer Normalization in the {Transformer} Architecture},
+  booktitle = {Proceedings of the 37th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {119},
+  year      = {2020},
+  url       = {https://arxiv.org/abs/2002.04745}
 }
 
 @inproceedings{gal2016dropout,
@@ -180,8 +190,131 @@
 }
 
 % ------------------------------------------------------------
+% Reglamentos oficiales FIA
+% ------------------------------------------------------------
+
+@techreport{fia2026general,
+  author      = {{F{\'e}d{\'e}ration Internationale de l'Automobile}},
+  title       = {2026 {Formula 1} General Regulatory Provisions --- Section {A}},
+  institution = {FIA},
+  type        = {Reglamento General},
+  number      = {Issue 02},
+  year        = {2026},
+  month       = feb,
+  url         = {https://www.fia.com/regulation/category/110},
+  note        = {Aprobado por el WMSC el 27/02/2026}
+}
+
+@techreport{fia2026sporting,
+  author      = {{F{\'e}d{\'e}ration Internationale de l'Automobile}},
+  title       = {2026 {Formula 1} Sporting Regulations --- Section {B}},
+  institution = {FIA},
+  type        = {Reglamento Deportivo},
+  number      = {Issue 06},
+  year        = {2026},
+  month       = apr,
+  url         = {https://www.fia.com/regulation/category/110},
+  note        = {Aprobado por el WMSC el 28/04/2026}
+}
+
+@techreport{fia2026technical,
+  author      = {{F{\'e}d{\'e}ration Internationale de l'Automobile}},
+  title       = {2026 {Formula 1} Technical Regulations --- Section {C}},
+  institution = {FIA},
+  type        = {Reglamento T{\'e}cnico},
+  number      = {Issue 18},
+  year        = {2026},
+  month       = may,
+  url         = {https://www.fia.com/regulation/category/110},
+  note        = {Aprobado por el WMSC el 07/05/2026}
+}
+
+% ------------------------------------------------------------
+% Pronóstico y evaluación
+% ------------------------------------------------------------
+
+@article{hyndman2006accuracy,
+  author    = {Hyndman, Rob J. and Koehler, Anne B.},
+  title     = {Another Look at Measures of Forecast Accuracy},
+  journal   = {International Journal of Forecasting},
+  volume    = {22},
+  number    = {4},
+  pages     = {679--688},
+  year      = {2006},
+  doi       = {10.1016/j.ijforecast.2006.03.001}
+}
+
+% ------------------------------------------------------------
+% Recursos divulgativos
+% ------------------------------------------------------------
+
+@misc{wikipediahuberloss,
+  author       = {{Wikipedia contributors}},
+  title        = {Huber loss},
+  howpublished = {Wikipedia, The Free Encyclopedia},
+  year         = {2026},
+  url          = {https://en.wikipedia.org/wiki/Huber_loss},
+  note         = {Accessed June 2026}
+}
+
+@misc{cornelladamw,
+  author       = {Hao, Yufeng and Tang, Zhengdao and Tian, Yixiao and Zhang, Yijie and Zhou, Zheng},
+  title        = {{AdamW}},
+  howpublished = {Cornell University Computational Optimization Open Textbook --- Optimization Wiki},
+  year         = {2024},
+  url          = {https://optimization.cbe.cornell.edu/index.php?title=AdamW},
+  note         = {Accessed June 2026}
+}
+
+@misc{pytorchonecyclelr,
+  author       = {{PyTorch Contributors}},
+  title        = {{torch.optim.lr\_scheduler.OneCycleLR}},
+  howpublished = {PyTorch Documentation, v2.12},
+  year         = {2026},
+  url          = {https://docs.pytorch.org/docs/2.12/generated/torch.optim.lr_scheduler.OneCycleLR.html},
+  note         = {Accessed June 2026}
+}
+
+@misc{applemps,
+  author       = {{Apple Inc.}},
+  title        = {{Metal Performance Shaders}},
+  howpublished = {Apple Developer Documentation},
+  year         = {2026},
+  url          = {https://developer.apple.com/documentation/metalperformanceshaders},
+  note         = {Accessed June 2026}
+}
+
+@misc{pernice2017fpattern,
+  author       = {Pernice, Kara},
+  title        = {{F-Shaped} Pattern of Reading on the Web: Misunderstood, But Still Relevant (Even on Mobile)},
+  howpublished = {Nielsen Norman Group},
+  year         = {2017},
+  month        = nov,
+  url          = {https://www.nngroup.com/articles/f-shaped-pattern-reading-web-content/},
+  note         = {Accessed June 2026}
+}
+
+% ------------------------------------------------------------
 % Fuentes de datos e infraestructura
 % ------------------------------------------------------------
+
+@misc{gptempo,
+  author       = {{GP Tempo}},
+  title        = {{GP Tempo}: {Formula 1} Lap Time Comparison},
+  howpublished = {Herramienta de an{\'a}lisis en l{\'\i}nea},
+  year         = {2026},
+  url          = {https://www.gp-tempo.com},
+  note         = {Accessed June 2026}
+}
+
+@misc{awsf1insights,
+  author       = {{Amazon Web Services}},
+  title        = {{F1 Insights} Powered by {AWS}},
+  howpublished = {{F1 on AWS}},
+  year         = {2026},
+  url          = {https://aws.amazon.com/sports/f1/},
+  note         = {Accessed June 2026}
+}
 
 @misc{openf1api,
   author    = {{OpenF1 Project}},
@@ -205,4 +338,40 @@
   year      = {2013},
   url       = {https://parquet.apache.org/},
   note      = {Accessed March 2026}
+}
+
+@misc{symonds2024tyretemp,
+  author    = {Symonds, Pat},
+  title     = {Por qu{\'e} la temperatura de los neum{\'a}ticos es un gran problema en la {F1}},
+  year      = {2024},
+  howpublished = {Motorsport.com (publicaci{\'o}n original en GP Racing)},
+  url       = {https://es.motorsport.com/f1/news/por-que-temperatura-neumaticos-gran-problema/10683165/},
+  note      = {Publicado 17 diciembre 2024. Accessed June 2026}
+}
+
+@misc{wikipediabayesiangame,
+  author       = {{Wikipedia contributors}},
+  title        = {Juego bayesiano},
+  howpublished = {Wikipedia, La enciclopedia libre},
+  year         = {2026},
+  url          = {https://es.wikipedia.org/wiki/Juego_bayesiano},
+  note         = {Accessed June 2026}
+}
+
+@misc{wikipediagametheory,
+  author       = {{Wikipedia contributors}},
+  title        = {Teor{\'i}a de juegos},
+  howpublished = {Wikipedia, La enciclopedia libre},
+  year         = {2026},
+  url          = {https://es.wikipedia.org/wiki/Teoría_de_juegos},
+  note         = {Accessed June 2026}
+}
+
+@misc{wikipediamarl,
+  author       = {{Wikipedia contributors}},
+  title        = {Aprendizaje por refuerzo multiagente},
+  howpublished = {Wikipedia, La enciclopedia libre},
+  year         = {2026},
+  url          = {https://es.wikipedia.org/wiki/Aprendizaje_por_refuerzo_multiagente},
+  note         = {Accessed June 2026}
 }
