@@ -214,6 +214,43 @@ Autorizada la entrega del proyecto
 \vspace{0.5em}
 \noindent Fdo.: Pablo Martín Muñoz
 
+% ── Declaración de uso de IA Generativa ──────────────────────────────────────
+\cleardoublepage
+\thispagestyle{empty}
+\begingroup
+\small
+\setlength{\parskip}{4pt plus 1pt minus 1pt}
+
+\begin{center}
+\textbf{Declaración de Uso de Herramientas de Inteligencia Artificial Generativa en Trabajos Fin de Grado}
+\end{center}
+
+\noindent
+\textbf{ADVERTENCIA:} Desde la Universidad consideramos que ChatGPT u otras herramientas similares son herramientas muy útiles en la vida académica, aunque su uso queda siempre bajo la responsabilidad del alumno, puesto que las respuestas que proporciona pueden no ser veraces. En este sentido, \textbf{NO} está permitido su uso en la elaboración del Trabajo Fin de Grado para generar código porque estas herramientas no son fiables en esa tarea. Aunque el código funcione, no hay garantías de que metodológicamente sea correcto, y es altamente probable que no lo sea.
+
+\noindent
+Por la presente, yo, Álvaro González Tabernero, estudiante del Doble Grado en Ingeniería en Tecnologías de Telecomunicación y Análisis de Negocios/Business Analytics (GITT-BA) de la Universidad Pontificia Comillas al presentar mi Trabajo Fin de Grado titulado \textbf{``RACESCOPE: OPTIMIZACIÓN DE LA ESTRATEGIA DE CARRERA EN FÓRMULA~1 MEDIANTE INTELIGENCIA ARTIFICIAL''}, declaro que he utilizado la herramienta de Inteligencia Artificial Generativa ChatGPT u otras similares de IAG de código sólo en el contexto de las actividades descritas a continuación:
+
+\begin{enumerate}[leftmargin=2em, itemsep=1pt, topsep=2pt, parsep=0pt]
+    \item \textbf{Crítico:} Para encontrar contra-argumentos a una tesis específica que pretendo defender.
+    \item \textbf{Referencias:} Usado conjuntamente con otras herramientas, como Science, para identificar referencias preliminares que luego he contrastado y validado.
+    \item \textbf{Metodólogo:} Para descubrir métodos aplicables a problemas específicos de investigación.
+    \item \textbf{Interpretador de código:} Para realizar análisis de datos preliminares.
+    \item \textbf{Constructor de plantillas:} Para diseñar formatos específicos para secciones del trabajo.
+    \item \textbf{Corrector de estilo literario y de lenguaje:} Para mejorar la calidad lingüística y estilística del texto.
+    \item \textbf{Generador previo de diagramas de flujo y contenido:} Para esbozar diagramas iniciales.
+    \item \textbf{Sintetizador y divulgador de libros complicados:} Para resumir y comprender literatura compleja.
+    \item \textbf{Revisor:} Para recibir sugerencias sobre cómo mejorar y perfeccionar el trabajo con diferentes niveles de exigencia.
+    \item \textbf{Traductor:} Para traducir textos de un lenguaje a otro.
+\end{enumerate}
+
+\noindent
+Afirmo que toda la información y contenido presentados en este trabajo son producto de mi investigación y esfuerzo individual, excepto donde se ha indicado lo contrario y se han dado los créditos correspondientes (he incluido las referencias adecuadas en el TFG y he explicitado para qué se ha usado ChatGPT u otras herramientas similares). Soy consciente de las implicaciones académicas y éticas de presentar un trabajo no original y acepto las consecuencias de cualquier violación a esta declaración.
+\vspace{0.6em}
+
+\noindent \textbf{Fecha:} 13 de junio de 2026 \hfill \textbf{Firma:}{\hspace{6cm}}
+\endgroup
+
 % ── Resumen ejecutivo (ES) ────────────────────────────────────────────────────
 \cleardoublepage
 
@@ -227,7 +264,7 @@ Autorizada la entrega del proyecto
 
 \noindent
 \textbf{RESUMEN DEL PROYECTO}\\
-\textit{RaceScope} es un sistema \textit{end-to-end} de exploración de estrategias pre-carrera para Fórmula~1 que combina aprendizaje profundo con simulación Monte Carlo para clasificar planes de paradas en boxes. Dada una temporada, circuito y piloto, el sistema genera un conjunto de estrategias candidatas y las ordena por tiempo total esperado bajo un criterio media-varianza. El motor articula tres componentes: un perfil paramétrico lineal por piloto-circuito-compuesto que resuelve analíticamente la vuelta de pit; un Transformer v3 entrenado por piloto, con cabeza global de respaldo, que predice el ritmo de vuelta de forma no lineal; y un optimizador de cartera que ordena las candidatas. Los datos provienen de la API pública OpenF1, con 2023-2024 como conjunto de entrenamiento y 2025 reservada íntegramente como \textit{held-out}. El sistema se entrega como una API FastAPI y una aplicación web React con vista comparativa entre pilotos.\\
+\textit{RaceScope} es un sistema de exploración de estrategias pre-carrera para Fórmula~1 que combina un Transformer de predicción de ritmo con simulación Monte Carlo. El motor articula tres componentes: un perfil paramétrico lineal por piloto-circuito-compuesto que resuelve analíticamente la vuelta de pit; un Transformer v3 por piloto, con cabeza global de respaldo, que predice el ritmo de vuelta de forma no lineal; y un optimizador media-varianza que ordena las candidatas. Los datos provienen de OpenF1 (2023-2024 para entrenamiento, 2025 \textit{held-out}). El sistema se entrega como una API FastAPI y una aplicación web React.\\
 
 \noindent \textbf{Palabras clave:}\\
 inteligencia artificial, Transformers, simulación Monte Carlo, estrategia de carrera,
@@ -235,10 +272,10 @@ Fórmula 1, predicción de tiempos de vuelta, degradación de neumáticos,
 aprendizaje profundo, optimización bajo incertidumbre, FastAPI.\\
 
 \noindent \textbf{MOTIVACIÓN}\\
-La elección de la estrategia de paradas en boxes es uno de los problemas de decisión más estudiados de la Fórmula~1 contemporánea. Los equipos profesionales operan simuladores propietarios sobre telemetría privada y modelos de neumático cerrados, inaccesibles fuera del muro de boxes. La literatura académica produce simuladores reproducibles solo recreando el simulador entero. Entre ambos extremos, el aficionado y el analista externo carecen de una herramienta que combine datos públicos, modelado moderno y exploración pre-carrera. \textit{RaceScope} cubre ese hueco: un sistema completamente \textit{open-source}, construido sobre la API pública OpenF1, que ordena las estrategias en segundos sobre una interfaz web. El propósito es doble: ofrecer al aficionado y al analista externo herramientas hasta ahora restringidas a los equipos, y aportar una referencia metodológica reproducible para futuros trabajos sobre estrategia en deportes de motor.\\
+La estrategia de paradas en boxes es uno de los problemas de decisión más estudiados de la Fórmula~1. Los equipos profesionales operan simuladores propietarios inaccesibles fuera del muro de boxes y la literatura académica produce simuladores reproducibles solo recreando el simulador entero. \textit{RaceScope} cubre el hueco intermedio: un sistema \textit{open-source} sobre datos públicos que ordena las estrategias en segundos sobre una interfaz web, dirigido al aficionado y al analista externo.\\
 
 \noindent \textbf{OBJETIVOS}\\
-El objetivo general es diseñar, implementar y evaluar un sistema \textit{end-to-end} de exploración de estrategias de paradas en Fórmula~1 que combine aprendizaje profundo y simulación Monte Carlo. Los cinco objetivos específicos son: (1) construir un pipeline de ingesta y preprocesamiento sobre OpenF1; (2) entrenar modelos Transformer de predicción de tiempos de vuelta específicos por piloto, con respaldo global; (3) ajustar un modelo paramétrico de degradación sensible a las condiciones térmicas; (4) integrar ambos modelos en un motor de estrategia que clasifique candidatas bajo un criterio media-varianza; y (5) entregar el sistema en una aplicación web reactiva sobre una API REST.\\
+Diseñar, implementar y evaluar un sistema \textit{end-to-end} de exploración de estrategias de paradas. Los cinco objetivos específicos son: (1) construir un pipeline sobre OpenF1; (2) entrenar Transformers por piloto con respaldo global; (3) ajustar un perfil paramétrico sensible a las condiciones térmicas; (4) integrar ambos modelos en un motor que clasifique bajo criterio media-varianza; y (5) entregar el sistema como una aplicación web sobre una API REST.\\
 
 \noindent \textbf{METODOLOGÍA}\\
 La metodología se estructura en cuatro fases:
@@ -358,10 +395,10 @@ La metodología se estructura en cuatro fases:
 \end{figure}
 
 \noindent \textbf{RESULTADOS}\\
-La evaluación sobre la temporada 2025 mantenida íntegramente como \textit{held-out} reporta un MAPE entre el 15{,}5\,\% y el 16{,}9\,\% sobre los cuatro pilotos evaluados (Verstappen, Norris, Piastri, Leclerc), con un sesgo positivo sistemático entre +636\,s y +692\,s en el tiempo total de carrera, atribuible al margen frente a \textit{safety car} aplicado por el motor. La simulación del campeonato Verstappen-Norris a partir de los tiempos esperados predichos arroja una concordancia carrera a carrera del 50\,\% y declara a Verstappen vencedor del campeonato hipotético por 70 puntos, frente al empate 11-11 del campeonato real.\\
+Sobre la temporada 2025 (\textit{held-out}), el motor reporta un MAPE entre el 15{,}5\,\% y el 16{,}9\,\% en los cuatro pilotos evaluados (LEC, NOR, PIA, VER) y un sesgo positivo sistemático entre +636\,s y +692\,s, atribuible al margen frente a \textit{safety car}. La simulación del campeonato Verstappen-Norris arroja una concordancia carrera a carrera del 50\,\% y declara a Verstappen vencedor por 70 puntos, frente al empate 11-11 real.\\
 
 \noindent \textbf{CONCLUSIONES}\\
-El sistema cumple su objetivo general: ordena las estrategias pre-carrera en segundos sobre una interfaz reactiva, con una calibración del orden del 16\,\% en el peor caso y un sesgo sistemático identificado y caracterizado. Las dos limitaciones estructurales del prototipo son la deriva temporal entre las temporadas de entrenamiento (2023-2024) y el conjunto evaluado (2025), y la ausencia de información de carrera en tiempo real, que en la realidad gobierna parte de las decisiones del muro de boxes. Las pestañas Live y Rewatch del cliente quedan reservadas para futuras iteraciones del prototipo.\\
+El sistema cumple su objetivo general: ordena las estrategias pre-carrera en segundos sobre una interfaz reactiva, con una calibración del orden del 16\,\% en el peor caso. Las dos limitaciones estructurales son la deriva temporal entre las temporadas de entrenamiento y 2025, y la ausencia de información de carrera en tiempo real.\\
 
 % ── Resumen ejecutivo (EN) ────────────────────────────────────────────────────
 \cleardoublepage
@@ -376,18 +413,18 @@ El sistema cumple su objetivo general: ordena las estrategias pre-carrera en seg
 
 \noindent
 \textbf{PROJECT ABSTRACT}\\
-\textit{RaceScope} is an end-to-end pre-race strategy exploration system for Formula~1 that combines deep learning with Monte Carlo simulation to rank pit-stop plans. Given a season, circuit and driver, the system generates a set of candidate strategies and ranks them by expected total race time under a mean-variance criterion. The engine articulates three components: a linear parametric profile per driver-circuit-compound that solves the pit lap analytically; a per-driver Transformer~v3 with a global fallback head that predicts lap pace non-linearly; and a portfolio optimiser that orders the candidates. Data is sourced from the public OpenF1 API, with seasons 2023-2024 used for training and 2025 held out entirely. The system is delivered as a FastAPI service and a React web application with a comparative driver view.\\
+\textit{RaceScope} is a pre-race strategy exploration system for Formula~1 that combines a lap-pace Transformer with Monte Carlo simulation. The engine articulates three components: a linear parametric profile per driver-circuit-compound that solves the pit lap analytically; a per-driver Transformer~v3 with a global fallback head that predicts lap pace non-linearly; and a mean-variance portfolio optimiser that ranks the candidates. Data is sourced from OpenF1 (2023-2024 for training, 2025 held-out). The system is delivered as a FastAPI service and a React web application.\\
 
 \noindent \textbf{Keywords:}\\
-artificial intelligence, Transformers, Monte Carlo simulation, race strategy,
+Artificial Intelligence, Transformers, Monte Carlo simulation, race strategy,
 Formula 1, lap time prediction, tyre degradation, deep learning,
 optimisation under uncertainty, FastAPI.\\
 
 \noindent \textbf{MOTIVATION}\\
-The choice of pit-stop strategy is one of the most studied decision problems in contemporary Formula~1. Professional teams operate proprietary simulators on private telemetry and closed tyre models, inaccessible outside the pit wall. The academic literature produces simulators that are reproducible only by recreating the simulator itself. Between both extremes, the fan and the external analyst lack a tool that combines public data, modern modelling and pre-race exploration. \textit{RaceScope} covers that gap: a fully open-source system, built on the public OpenF1 API, that ranks strategies in seconds on a web interface. The purpose is twofold: to offer fans and external analysts tools previously restricted to teams, and to contribute a reproducible methodological reference for future work on race strategy in motorsport.\\
+Pit-stop strategy is one of the most studied decision problems in Formula~1. Professional teams operate proprietary simulators inaccessible outside the pit wall, and academic simulators are reproducible only by recreating the simulator itself. \textit{RaceScope} covers the gap in between: an open-source system on public data that ranks strategies in seconds on a web interface, aimed at the fan and the external analyst.\\
 
 \noindent \textbf{OBJECTIVES}\\
-The general objective is to design, implement and evaluate an end-to-end system for the exploration of pit-stop strategies in Formula~1 that combines deep learning and Monte Carlo simulation. The five specific objectives are: (1) building an ingestion and preprocessing pipeline on top of OpenF1; (2) training per-driver Transformer models for lap time prediction with a global fallback; (3) fitting a parametric tyre-degradation model sensitive to thermal conditions; (4) integrating both models into a strategy engine that ranks candidates under a mean-variance criterion; and (5) delivering the system as a reactive web application on top of a REST API.\\
+Design, implement and evaluate an end-to-end pit-stop strategy exploration system. The five specific objectives are: (1) building an ingestion and preprocessing pipeline on top of OpenF1; (2) training per-driver Transformers with a global fallback; (3) fitting a parametric profile sensitive to thermal conditions; (4) integrating both models into an engine that ranks candidates under a mean-variance criterion; and (5) delivering the system as a web application on top of a REST API.\\
 
 \noindent \textbf{METHODOLOGY}\\
 The methodology is structured into four phases:
@@ -507,10 +544,10 @@ The methodology is structured into four phases:
 \end{figure}
 
 \noindent \textbf{RESULTS}\\
-The evaluation on the 2025 season, held out entirely from training, reports a MAPE between 15{.}5\,\% and 16{.}9\,\% across the four evaluated drivers (Verstappen, Norris, Piastri, Leclerc), with a systematic positive bias between +636\,s and +692\,s in total race time, attributable to the \textit{safety-car} margin applied by the engine. The Verstappen-Norris championship simulation built from the predicted expected times yields a race-by-race head-to-head agreement of 50\,\% and declares Verstappen as the hypothetical champion by 70 points, against the real 11-11 tie.\\
+On the 2025 season held out entirely from training, the engine reports a MAPE between 15{.}5\,\% and 16{.}9\,\% across the four evaluated drivers (LEC, NOR, PIA, VER) and a systematic positive bias between +636\,s and +692\,s, attributable to the \textit{safety-car} margin. The Verstappen-Norris championship simulation yields a 50\,\% race-by-race agreement and declares Verstappen the hypothetical champion by 70 points, against the real 11-11 tie.\\
 
 \noindent \textbf{CONCLUSIONS}\\
-The system meets its general objective: it ranks pre-race strategies in seconds on a reactive interface, with a worst-case calibration of about 16\,\% and a systematic bias that is identified and characterised. The two structural limitations of the prototype are the temporal drift between the training seasons (2023-2024) and the evaluated set (2025), and the absence of real-time race information, which in reality governs part of the pit-wall decisions. The Live and Rewatch tabs of the client are reserved for future iterations of the prototype.\\
+The system meets its general objective: it ranks pre-race strategies in seconds on a reactive interface, with a worst-case calibration of about 16\,\%. The two structural limitations are the temporal drift between the training seasons and 2025, and the absence of real-time race information.\\
 
 % ── Agradecimientos ───────────────────────────────────────────────────────────
 % \cleardoublepage
