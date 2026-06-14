@@ -317,7 +317,7 @@ calculados sobre el conjunto de vueltas de la sesión de carrera del circuito y 
 \subsubsection{Puntos de aplicación}
 \label{sssec:envoltura_aplicacion}
 
-La envoltura se aplica como cota dura en cuatro puntos del pipeline, organizados como capas concéntricas de defensa:
+La envoltura se aplica como un límite estricto en cuatro puntos del pipeline, organizados como capas concéntricas de defensa:
 
 \begin{enumerate}
     \item \textbf{Corrección térmica acotada.} Cada uno de los términos $\beta_2 \cdot \Delta T_{\text{pista}}$ y $\beta_3 \cdot \Delta T_{\text{aire}}$ se acota individualmente al intervalo $[-\Delta_T, +\Delta_T]$ con $\Delta_T = 3~\si{\second}$. La cota se sitúa por encima del rango fisiológico del compuesto pero por debajo del orden de magnitud de los coeficientes sobreajustados detectados en el diagnóstico. El acotado se aplica tanto en la generación analítica del Motor 1 como en la precomputación de las curvas de ritmo, lo que evita que ambos caminos del motor diverjan en su tratamiento de la temperatura.

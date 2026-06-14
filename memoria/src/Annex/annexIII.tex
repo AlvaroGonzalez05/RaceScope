@@ -1,0 +1,18 @@
+%% ─────────────────────────────────────────────────────────────────────────────
+%% Anexo III — Código fuente del proyecto
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\chapter{Código fuente del proyecto}
+\label{ann:repo}
+
+El código fuente completo de \textit{RaceScope} se distribuye en abierto en el siguiente repositorio público de GitHub:
+
+\begin{center}
+\url{https://github.com/AlvaroGonzalez05/RaceScope}
+\end{center}
+
+\noindent
+El repositorio contiene tanto el backend (pipeline de datos OpenF1, modelos Transformer y paramétrico, motor de estrategia y API FastAPI) como el frontend (aplicación web en React + Vite), las fuentes \LaTeX{} de esta memoria, la declaración de uso de herramientas de Inteligencia Artificial Generativa y la documentación operativa para reproducir el sistema.
+
+\noindent
+Las temporadas de entrenamiento (2023-2024) y el conjunto \textit{held-out} de 2025 se regeneran localmente a partir de la API pública \textit{OpenF1} ejecutando los \textit{scripts} de ingesta y preprocesamiento descritos en el documento pertinente; los artefactos resultantes (parquets, modelos entrenados, cachés) no se versionan para evitar sobrecargar el repositorio.
