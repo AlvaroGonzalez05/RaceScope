@@ -36,9 +36,9 @@ Para cada par (piloto, carrera) se compara el tiempo total de la estrategia mejo
 \subsection{Resultados agregados}
 \label{ssec:eval_calibracion_resultados}
 
-La tabla~\ref{tab:eval_calibracion} resume las dos métricas principales por piloto, junto con el MAE y RMSE del modelo de ritmo a nivel de vuelta y la tasa de aciertos del Top-5 (proporción de carreras en las que la estrategia real aparece entre las cinco estrategias mejor clasificadas por el motor). El MAPE se mantiene entre el 15{,}5\,\% y el 16{,}9\,\% en los cuatro casos, con Leclerc como mejor calibrado y Verstappen como el más alejado, separados por poco más de un punto porcentual. 
+La tabla~\ref{tab:eval_calibracion} resume las dos métricas principales por piloto, junto con el MAE y RMSE del modelo de ritmo a nivel de vuelta y la tasa de aciertos del Top-5 (proporción de carreras en las que la estrategia real aparece entre las cinco estrategias mejor clasificadas por el motor). El MAPE se mantiene entre el 13{,}5\,\% y el 14{,}6\,\% en los cuatro casos, con Leclerc como mejor calibrado y Piastri como el más alejado, separados por poco más de un punto porcentual.
 
-El sesgo medio es positivo y de magnitud similar en los cuatro pilotos, entre +636\,s y +692\,s: el motor sobreestima el tiempo total de carrera de manera sistemática, en una franja que para un Gran Premio de unos \SI{5400}{\second} representa entre el 11{,}8\,\% y el 12{,}8\,\% del tiempo real. La coincidencia en signo y orden de magnitud apunta a un sesgo del propio motor, no a ruido del \textit{rollout} Monte Carlo: si fuese ruido, los cuatro pilotos no compartirían la misma dirección y la misma magnitud.
+El sesgo medio es positivo y de magnitud similar en los cuatro pilotos, entre +637\,s y +692\,s: el motor sobreestima el tiempo total de carrera de manera sistemática, en una franja que para un Gran Premio de unos \SI{5400}{\second} representa entre el 11{,}8\,\% y el 12{,}8\,\% del tiempo real. La coincidencia en signo y orden de magnitud apunta a un sesgo del propio motor, no a ruido del \textit{rollout} Monte Carlo: si fuese ruido, los cuatro pilotos no compartirían la misma dirección y la misma magnitud.
 
 \begin{table}[htbp]
 \centering
@@ -50,10 +50,10 @@ El sesgo medio es positivo y de magnitud similar en los cuatro pilotos, entre +6
 \toprule
 \textbf{Piloto} & \textbf{Equipo} & \textbf{N} & \textbf{MAPE (\%)} & \textbf{Sesgo (s)} & \textbf{MAE / RMSE (s)} & \textbf{Top-5 (\%)} \\
 \midrule
-Leclerc (LEC)    & Ferrari   & 23 & 15{,}49 & $+636{,}5$ & $9{,}73$ / $11{,}67$ & 21{,}7 \\
-Norris (NOR)     & McLaren   & 24 & 16{,}41 & $+682{,}2$ & $11{,}89$ / $13{,}72$ & 33{,}3 \\
-Piastri (PIA)    & McLaren   & 23 & 16{,}63 & $+688{,}1$ & $12{,}71$ / $14{,}66$ & 17{,}4 \\
-Verstappen (VER) & Red Bull  & 23 & 16{,}91 & $+691{,}8$ & $11{,}90$ / $14{,}32$ & 30{,}4 \\
+Leclerc (LEC)    & Ferrari   & 23 & 13{,}53 & $+637$ & $9{,}73$ / $11{,}67$ & 21{,}7 \\
+Norris (NOR)     & McLaren   & 24 & 14{,}45 & $+682$ & $11{,}89$ / $13{,}72$ & 33{,}3 \\
+Piastri (PIA)    & McLaren   & 23 & 14{,}57 & $+688$ & $12{,}71$ / $14{,}66$ & 17{,}4 \\
+Verstappen (VER) & Red Bull  & 23 & 14{,}56 & $+692$ & $11{,}90$ / $14{,}32$ & 30{,}4 \\
 \bottomrule
 \end{tabularx}
 }
