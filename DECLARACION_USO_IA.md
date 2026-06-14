@@ -19,7 +19,7 @@ Las categorías que figuran aquí coinciden con las declaradas en el anexo de la
 1. **Crítico** — contra-argumentos sobre decisiones de modelado (Transformer v3 frente a LSTM, cota de validez física, criterio media-varianza) para reforzar la defensa de las decisiones tomadas.
 2. **Referencias** — búsqueda de candidatas bibliográficas (arXiv, DOIs, documentación oficial), que el autor ha contrastado contra la fuente primaria antes de añadirlas a `memoria/src/main.bib`.
 3. **Metodólogo** — sugerencias de técnicas aplicables (normalización térmica, envoltura empírica por circuito, etc.) que el autor ha implementado, evaluado y validado.
-4. **Interpretador de código** — análisis preliminar de los CSV de evaluación 2025 (`code/backend_fastapi/reports/eval_2025_4drivers.csv`) para extraer métricas agregadas (MAPE, sesgo, MAE/RMSE) que después se han incorporado a la memoria.
+4. **Interpretador de código** — análisis preliminar de los CSV de evaluación 2025 (`code/backend_fastapi/reports/eval_2025_4drivers.csv`) para extraer métricas agregadas (MAPE, sesgo, MAE/RMSE) que después se han incorporado a la memoria. Además, se ha prestado ayuda para la depuración de errores y debugging.
 5. **Constructor de plantillas** — andamiaje de estructuras LaTeX (tablas con `tabularx`, sección de resumen ejecutivo y abstract, listas con `enumitem`) que el autor ha adaptado al estilo del documento.
 6. **Corrector de estilo literario y de lenguaje** — pasadas de revisión sobre la prosa de los capítulos 1–6 según las indicaciones del autor y bajo una guía de estilo personal.
 7. **Generador previo de diagramas de flujo y contenido** — esbozo inicial de las figuras TikZ (arquitectura del sistema, pipeline de datos) que el autor ha refinado y validado.

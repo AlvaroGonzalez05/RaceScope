@@ -3,6 +3,8 @@
 ## 1) Vision del producto
 RaceScope es una aplicacion para explorar y comparar estrategias de Formula 1 antes de carrera (`Pre-race`).
 
+> Declaración de uso de herramientas de Inteligencia Artificial Generativa: ver [`DECLARACION_USO_IA.md`](DECLARACION_USO_IA.md).
+
 Objetivos actuales:
 - Abrir en `Home` con una landing interactiva de producto.
 - Mostrar estrategias realistas por piloto con degradacion y ventanas de pit.
